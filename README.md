@@ -1,46 +1,15 @@
 # Distributed E-Commerce Recommendation Analytics System
 
-An event-driven microservices system that simulates an e-commerce
-platform, being built out toward a full **Lambda Architecture**: Kafka
-ingestion feeding both a real-time (speed) layer and a batch layer,
-with independent consumers turning the same event stream into
-personalized recommendations and business analytics. See
-[Roadmap](#roadmap) below for what's built vs. planned.
+A Lambda Architecture pipeline built with Python, Kafka, and Spark to
+turn e-commerce clickstream events into real-time recommendations,
+batch analytics, and
+[serving layer performance tuning](#serving-layer-performance-indexing-partitioning--refresh-intervals).
 
 ## Architecture (current)
 
-```
-                 ┌────────────────┐        ┌─────────────────┐
-   client ─────► │  event-service  │───────►│  Kafka topic     │
-                 │  (POST /events) │        │  "events"        │
-                 └─────────────────┘        └──┬────┬─────┬────┘
-                                                │    │     │
-                                         consumes│  consumes│  consumes
-                                                │    │     │
-                                                ▼    ▼     ▼
-                       ┌───────────────┐ ┌──────────────────┐ ┌───────────┐
-                       │ recommendation-│ │ analytics-service │ │ hdfs-sink │
-                       │ service        │ │ (rolling product/ │ │ (batches  │
-                       │ (item-based CF)│ │  daily stats)     │ │  events   │
-                       └───────┬────────┘ └─────────┬─────────┘ │  to HDFS) │
-                               │                     │           └─────┬─────┘
-                         reads product            writes to            │
-                         details from             analytics_db         ▼
-                         product-service                        ┌─────────────┐
-                                                                  │ HDFS         │
-                                                                  │ /events/     │
-                                                                  │  dt=YYYY-MM- │
-                                                                  │  DD/*.jsonl  │
-                                                                  └─────────────┘
-                 ┌─────────────────┐        ┌─────────────────┐
-                 │ product-service │◄───────│  user-service    │
-                 │ (catalog CRUD)  │        │  (user CRUD)     │
-                 └─────────────────┘        └─────────────────┘
-```
-
 `event-service` has no database of its own — Kafka *is* its durable
-log. Every event flows through the `events` topic; downstream
-consumers each build their own independent read model from it.
+log. Every event flows through the `events` topic, and each downstream
+consumer builds its own independent read model from it.
 
 **Services** (each is its own FastAPI app or worker, own Docker image):
 
@@ -53,40 +22,64 @@ consumers each build their own independent read model from it.
 | `analytics-service` | 8005 | Consumes the `events` topic independently, maintains rolling product/day counters | `analytics_db` (Postgres) |
 | `hdfs-sink` | — | Consumes the `events` topic with a *persistent* consumer group, batches events into HDFS as the raw archive for the batch layer | HDFS (`/events/dt=YYYY-MM-DD/*.jsonl`) |
 
-`hdfs-sink` differs from the other two consumers on purpose: it uses
-one committed-offset consumer group instead of a fresh one per
-restart, because HDFS is an append-only archive — replaying from the
-beginning on every restart would duplicate every batch already
-written. It commits Kafka offsets only after a batch is durably
-written to HDFS (at-least-once delivery), and flushes on a 500-event
-or 30-second window, whichever comes first.
+`recommendation-service` and `analytics-service` replay the full
+topic on a fresh consumer group at startup, so they're restart-safe.
+`hdfs-sink` is the exception — a persistent, committed-offset group,
+since replaying from scratch would duplicate archived batches; it
+flushes on a 500-event or 30-second window, whichever comes first.
 
-**Why this shape:** `event-service` doesn't know or care who reads
-its events — `recommendation-service` and `analytics-service` are
-independent consumers of the same Kafka topic, each building its own
-read model and its own consumer group (a fresh, unique group ID on
-every process start, so each service replays the full topic from the
-beginning on boot and reconstructs its state — restart-safe by
-construction). This is the standard event-driven / CQRS pattern behind
-Lambda Architecture: one durable log, multiple independent readers.
+Kafka runs in **KRaft mode** (no Zookeeper) on the official
+`apache/kafka` image. HDFS runs as a single namenode + datanode, built
+from a custom arm64 image (`infra/hadoop`) since the official Hadoop
+images are amd64-only. Each remaining service owns its own Postgres
+database (database-per-service, one shared container for local dev).
 
-Kafka runs in modern **KRaft mode** (no separate Zookeeper container —
-Zookeeper has been phased out of Kafka itself since the 3.3 release)
-using the official `apache/kafka` image.
+The `events` topic has 3 partitions, and producer calls don't set a
+partition key, so Kafka round-robins events across them instead of
+routing by `user_id`. That trades per-user ordering for even load
+distribution -- fine here, since every consumer aggregates with
+commutative counters or event-time windowing, not arrival order.
 
-HDFS runs as a single namenode + single datanode, built from a custom
-image (`infra/hadoop`) rather than a stock Hadoop image: both the
-official `apache/hadoop` image and the popular `bde2020/hadoop-*`
-images are amd64-only. Hadoop is plain Java, so its JARs are
-architecture-neutral — building on `eclipse-temurin` (which does
-publish a native arm64 JRE) and dropping in the stock Hadoop binary
-tarball gives native performance on Apple Silicon instead of running
-under Rosetta emulation.
+Full data flow, speed layer through batch layer through serving:
 
-Each remaining service also owns its own Postgres database
-(`product_db`, `user_db`, `analytics_db` — all in one Postgres
-container for local dev, but logically separate schemas —
-database-per-service).
+```mermaid
+flowchart LR
+    client([client]) -->|POST /events| eventsvc[event-service]
+    eventsvc -->|produce| kafka[(Kafka<br/>events, 3 partitions)]
+
+    kafka -->|fresh group| recsvc[recommendation-service]
+    kafka -->|fresh group| analyticssvc[analytics-service]
+    kafka -->|persistent group| hdfssink[hdfs-sink]
+    kafka -->|consume| sparkstream[Spark Structured Streaming]
+
+    analyticssvc --> analyticsdb[(Postgres analytics_db)]
+    sparkstream -->|per-minute demand| cassandra[(Cassandra)]
+    sparkstream -->|finalized sessions| hdfs[(HDFS)]
+    hdfssink -->|append| hdfs
+
+    hdfs --> mapreduce[MapReduce popularity job]
+    hdfs --> als[Spark MLlib ALS training]
+    als -->|model + top-10 recs| hdfs
+    hdfs --> hbaseloader[hbase-loader]
+    hbaseloader --> hbase[(HBase)]
+
+    recsvc -->|precomputed lookups| hbase
+    recsvc -->|product details| productsvc[product-service]
+    productsvc --> mongo[(MongoDB)]
+    productsvc --> es[(Elasticsearch)]
+    usersvc[user-service] --> userdb[(Postgres user_db)]
+
+    servopt[serving-optimizer] -.polls.-> userdb
+    servopt -.polls.-> analyticsdb
+    servopt -.polls.-> cassandra
+    servopt -.polls.-> es
+
+    browser([browser]) --> dashboard[dashboard]
+    dashboard --> productsvc
+    dashboard --> recsvc
+    dashboard --> analyticssvc
+    dashboard --> servopt
+```
 
 ## Recommendation algorithm
 
@@ -96,369 +89,263 @@ filtering**:
 1. Every event (`view`, `add_to_cart`, `purchase`) is weighted (1, 3,
    5 respectively) and folded into an in-memory user→item and
    item→user interaction matrix.
-2. To recommend for a user, it finds items similar to what the user
-   already interacted with, using **cosine similarity** between each
-   item's interaction vectors.
+2. Finds items similar to what the user already interacted with,
+   using **cosine similarity** between interaction vectors.
 3. Candidate items are scored by `similarity × the user's weight on
    the seed item`, summed across all the user's interactions, and
    ranked.
 4. New users with no history fall back to a popularity ranking.
 
-State is rebuilt on startup by replaying the entire Kafka topic, so
-the service is stateless from a deployment standpoint — kill it,
-restart it, and it reconstructs itself from the event log.
+State is rebuilt on startup by replaying the Kafka topic, so the
+service is stateless from a deployment standpoint.
 
 ## Batch layer: MapReduce
 
 `jobs/product-popularity/` is a real Hadoop **MapReduce** job (via
-Hadoop Streaming, so the mapper/reducer are plain Python read from
-stdin/write to stdout rather than Java classes) that computes the same
-weighted popularity ranking as `recommendation-service`'s fallback,
-but as a batch computation over the full HDFS event archive instead of
-an in-memory streaming aggregate:
+Hadoop Streaming — plain Python mapper/reducer reading stdin/writing
+stdout) that computes the same weighted popularity ranking as
+`recommendation-service`'s fallback, but as a batch computation over
+the full HDFS event archive:
 
-1. **Mapper** (`mapper.py`) reads each archived event line and emits
-   `product_id -> weight` (1/3/5 for view/add_to_cart/purchase).
-2. Hadoop's shuffle phase groups and sorts these by key.
-3. **Reducer** (`reducer.py`) sums the weights per product, relying on
-   the standard streaming guarantee that all records for a key arrive
-   contiguously — the classic MapReduce accumulator pattern, not an
-   in-memory dict keyed by every product.
-4. A driver script (`run_job.sh`) submits the job, then sorts the
-   (typically small) aggregated result set and writes a final ranked
-   file back to HDFS at `/output/product-popularity-ranked.tsv`.
+1. **Mapper** emits `product_id -> weight` per archived event.
+2. Hadoop's shuffle groups and sorts these by key.
+3. **Reducer** sums weights per product using that sort order
+   (compare-to-previous-key), not an in-memory dict.
+4. A driver script sorts the result and writes the final ranked file
+   to HDFS.
 
-The job runs via Hadoop's `LocalJobRunner` (`mapreduce.framework.name`
-defaults to `local`) rather than YARN — with a single datanode in this
-local cluster, a full YARN ResourceManager/NodeManager would add
-another two JVM services for no real distribution benefit, so this
-keeps the resource budget for the rest of the stack (Spark, HBase,
-Cassandra, MongoDB, Elasticsearch) intact while still running genuine
-Hadoop MapReduce semantics and APIs.
+Runs via Hadoop's `LocalJobRunner` rather than YARN, to save a couple
+of JVM services worth of memory for the rest of the stack.
 
-**Verified, not just run**: the job's ranked output was checked against
-`recommendation-service`'s popularity fallback and `analytics-service`'s
-SQL-based aggregation — three independently implemented computations
-over the same event data, and all three produced identical rankings
-and identical scores for every product.
-
-It's a one-shot batch job, not a long-running service, so it's kept
-out of `docker compose up` behind a Compose profile — see
-[Running locally](#running-locally) for the invocation.
+It's a one-shot job, kept out of `docker compose up` behind a Compose
+profile — see [Running locally](#running-locally).
 
 ## Speed layer: Spark Structured Streaming
 
 `jobs/spark-streaming/session_and_anomaly.py` runs on a Spark standalone
-cluster (`spark-master` + `spark-worker`) and reads the Kafka `events`
-topic live, running two independent streaming queries:
+cluster and reads the Kafka `events` topic live, running two
+independent streaming queries:
 
 1. **Session reconstruction** groups each user's events using Spark's
-   `session_window` (a gap-based window — by default a new session
-   starts after 5 minutes of inactivity), and writes finalized sessions
-   to HDFS at `/spark-output/sessions/` once the watermark confirms a
-   session won't receive any more events.
+   `session_window` (5-minute inactivity gap by default), writing
+   finalized sessions to HDFS once the watermark confirms they're closed.
 2. **Per-product demand anomaly detection** counts events per product
-   in 1-minute tumbling windows, maintains a running mean/variance per
-   product using **Welford's online algorithm** (so it doesn't need to
-   hold full history in memory), and flags a window as anomalous when
+   in 1-minute tumbling windows and flags a window as anomalous when
    it's more than 2.5 standard deviations from that product's running
-   mean — Z-score outlier detection computed incrementally over an
-   unbounded stream, via `foreachBatch`.
+   mean, computed incrementally with **Welford's online algorithm**.
 
-**Verified with a real spike, not just run**: sent steady baseline
-traffic (~8 events/min) for one product for 3 minutes, then a 60-event
-burst in 10 seconds, then more baseline. The job correctly built a
-baseline (mean≈5.3, stddev≈1.9) from the quiet windows and flagged the
-spike window (count=66) with `z_score=32.17` — far past the threshold.
-Session reconstruction was verified the same way: a distinct burst of
-8 events for one test user produced an HDFS session record with the
-exact right `event_count` and `products` list, correctly bounded to
-one session window.
-
-Session gap and watermark are configurable via `SESSION_GAP` /
-`SESSION_WATERMARK` env vars (defaults: 5 minutes / 10 minutes,
-realistic session semantics) — useful for shortening them during local
-testing so you don't have to wait ~15 minutes to see output.
-
-Uses the official `apache/spark` image, which — unlike the Hadoop
-images — does publish native arm64 builds, so no custom image was
-needed here.
+A controlled 60-event burst produced a z_score of 32.17 and was
+flagged by the detector (see Benchmarks) -- one test, not a claim of
+general accuracy. Session and watermark durations are configurable
+via env vars for faster local testing.
 
 ## ALS recommendation model (Spark MLlib)
 
-`jobs/als-training/train_als.py` trains a real collaborative-filtering
-model — **ALS (Alternating Least Squares)** in Spark MLlib, with
-`implicitPrefs=True` since clickstream events (view/add-to-cart/
-purchase) are implicit feedback, not explicit ratings — on the
+`jobs/als-training/train_als.py` trains an **ALS (Alternating Least
+Squares)** implicit-feedback model in Spark MLlib on the real, public
 [RetailRocket e-commerce dataset](https://www.kaggle.com/datasets/retailrocket/ecommerce-dataset)
-(real, public, ~2.75M events collected over 4.5 months; not a synthetic
-or self-generated dataset). Event weights match the scheme used
-throughout this project (view=1, add_to_cart=3, transaction=5).
+(~2.75M events over 4.5 months), using the same event-weighting scheme
+as the rest of the project. Trained with `implicitPrefs=True`, since
+view/cart/purchase counts are engagement signals, not ratings --
+weight becomes ALS's confidence input, not a value to predict.
 
-**The honest result, not a curated one:** on a held-out 20% test split,
-evaluated against 31,285 users with enough interaction history for a
-meaningful train/test signal (≥5 interactions — RetailRocket is
-extremely sparse, median interactions-per-user is 1 across ~1.4M users
-and ~235K items, verified directly from the raw data), the model
-achieves:
+Evaluated on a held-out test split:
 
 ```
 Precision@10 = 0.0055
 ```
 
-That is a real, reproducible number (same result across two full
-training runs with `seed=42`), and it is **far below the >0.15 often
-cited in portfolio write-ups of similar stacks** — including an
-earlier draft of this project's own resume bullet, before it was
-corrected to match what the model actually does. For context: random
-recommendation against a 235K-item catalog would score roughly 0.0000425,
-so the model is meaningfully better than chance (~68x), but "meaningfully
-better than random" and "good" are different claims, and only the
-former is true here. Extreme data sparsity is the dominant cause, not
-an implementation bug — verified by directly computing the dataset's
-interaction distribution rather than assuming it. A production system
-would likely need richer features (item metadata, session context),
-more training data per user, or a hybrid approach (e.g. blending in the
-content-based signals available in `item_properties.csv`, not currently
-used) to do meaningfully better on a catalog this large and this sparse.
+RetailRocket is extremely sparse (median interactions per user is 1,
+across ~1.4M users and ~235K items) -- the dominant reason the number
+is low, not an implementation bug. Evaluation only counts users with
+at least 5 interactions (`MIN_INTERACTIONS_FOR_EVAL`), since with 1-2
+a held-out item is mostly noise; every interaction still trains the
+model regardless. A production system would want richer item
+features or a hybrid content + collaborative approach here.
 
-The trained model and a precomputed top-10-recommendations table for
-the ~39,600 users with enough history to recommend for (not the full
-~1.4M-user base — see the note in the script) are both persisted to
-HDFS, at `/models/als-recommender` and `/output/als-recommendations`
-respectively.
+The trained model and a precomputed top-10-recommendations table are
+both persisted to HDFS.
 
 ## Serving layer: HBase
 
-HDFS is fine for batch reads but isn't a point-lookup store — turning
-"the ALS output sits in HDFS" into "a live service can fetch a user's
-precomputed recommendations in milliseconds" needs something else.
-That's what HBase is for here: a real HBase cluster (master +
-regionserver + ZooKeeper, all custom-built the same way as the Hadoop
-image — there's no official Apache HBase Docker image at all, let
-alone an arm64 one), backed by **real HDFS storage**
-(`hbase.rootdir=hdfs://...`), not HBase's local-disk standalone mode.
-
-`services/hbase-loader` (a one-shot job, like the MapReduce job) reads
-`/output/als-recommendations` from HDFS and loads it into an
-`als_recommendations` HBase table — one row per user, ranked
-item/score pairs as columns. `recommendation-service` then queries
-HBase's built-in REST server for a new endpoint:
+HDFS is fine for batch reads but isn't a point-lookup store, so a real
+HBase cluster (master + regionserver + ZooKeeper, backed by actual
+HDFS storage rather than standalone mode) serves the ALS output for
+low-latency lookups:
 
 ```bash
 curl http://localhost:8004/recommendations/precomputed/54
 ```
 
-**Verified, not assumed:**
-- Loaded all 39,632 rows, then queried a known user via HBase's REST
-  API directly and confirmed the returned item ids and scores matched
-  the HDFS source data exactly.
-- Measured real point-lookup latency over 20 requests: **~10ms average
-  (5ms min, 48ms max)** through the HTTP REST layer — a native HBase
-  client would be faster still, since REST adds its own overhead.
-- Killed the `hbase-master` container outright (by accident, while
-  writing a cleanup command — caught immediately) and confirmed the
-  data survived and the cluster reconnected cleanly once it restarted,
-  since HBase's actual state lives in HDFS/ZooKeeper, not the
-  container itself.
+Measured point-lookup latency over the REST layer: **~10ms average**.
 
-One honest caveat: the ALS model's ids are RetailRocket's real item
-ids (large arbitrary numbers like `9877`), not this project's own demo
-product catalog (ids 1-20, seeded via `scripts/seed_data.py`). They're
-intentionally separate id spaces — RetailRocket exists to train and
-evaluate a real model at real scale, the demo catalog exists to
-exercise the live microservices end-to-end without needing a full
-external catalog wired into every service — so `/recommendations/precomputed/{id}`
-does not (and cannot) enrich its results via `product-service` the way
-the other recommendation endpoints do.
+One caveat: the ALS model uses RetailRocket's own item ids, not this
+project's demo catalog ids, so `/recommendations/precomputed/{id}`
+can't be enriched through `product-service` like the other endpoints.
 
 ## Time-series analytics: Cassandra
 
-The Spark Structured Streaming job already computes per-product,
-per-minute event-count windows for Z-score anomaly detection (see
-[Speed layer](#speed-layer-spark-structured-streaming) above) — that
-same computation is reused, not duplicated, to also populate a
-Cassandra time-series table: one aggregate, two consumers.
+Per-product, per-minute window counts (already computed for anomaly
+detection) populate a Cassandra table, `product_demand_by_minute`,
+partitioned by `(product_id, bucket_date)` so each partition holds
+one product's counts for one day. Each write upserts the window's
+current total rather than incrementing a counter, since Spark's
+`update` mode would otherwise double-count.
 
-`product_demand_by_minute` partitions by `(product_id, bucket_date)` —
-a day's worth of per-minute counts for one product lives in a single
-partition, the standard Cassandra time-series pattern that bounds
-partition size by bucketing on time, rather than letting a partition
-grow unboundedly the way a naive `PRIMARY KEY (product_id)` table
-would. Each window write is a plain upsert of that window's *current*
-total (not a counter increment) — Spark's `update` output mode re-emits
-a window's running total on every micro-batch until it closes, so
-incrementing on each write would double-count; overwriting with the
-current total is both simpler and correct.
-
-`analytics-service` exposes it live, distinct from its existing
-Postgres-backed endpoints:
+`analytics-service` exposes it live:
 
 ```bash
 curl http://localhost:8005/analytics/demand-timeseries/4269
 ```
 
-**Verified, not assumed:** pushed live traffic through Kafka, confirmed
-the exact row count Spark's own batch log reported (`window_rows=5292`)
-matched Cassandra's row count exactly, then queried a specific product
-through both `cqlsh` directly and the live HTTP endpoint and got
-identical data both times.
-
 ## Product catalog: MongoDB
 
-`product-service` was migrated off Postgres onto MongoDB — a genuine
-migration, not MongoDB bolted on alongside the old store. Product
-documents are actually enriched (the "enriched product information"
-this is meant to demonstrate), with nested, variable-shape data that's
-awkward in a flat SQL row but natural in a document store: `tags`,
-`specifications` (brand/color/weight as a nested object), `images`,
-a GeoJSON `location` (real warehouse-city coordinates — the same field
-shape Elasticsearch's geo-filtered search will read later, added once,
-not re-seeded), and `rating`.
+`product-service` runs on MongoDB rather than Postgres, storing
+enriched, variable-shape product documents — `tags`,
+`specifications`, `images`, a GeoJSON `location`, and `rating` — that
+would be awkward as flat SQL rows. Product ids stay plain integers
+via an atomic counter document (MongoDB has no built-in
+auto-increment), since every other service keys on integer ids.
 
-The catalog itself is **300 real Amazon products** — real titles,
-brands, prices, descriptions, images, ratings, and Amazon Standard
-Identification Numbers (ASINs) — pulled from the public
+The catalog contains **300 Amazon products** — titles, brands,
+prices, images, ratings, and ASINs — pulled from the public
 [McAuley-Lab/Amazon-Reviews-2023](https://amazon-reviews-2023.github.io/)
-dataset (Electronics, Toys & Games, Musical Instruments, and Cell
-Phones & Accessories categories) via `scripts/fetch_amazon_products.py`.
-Not synthetic/placeholder data — see [`data/amazon_products.json`](data/amazon_products.json)
-for the extracted records, and [Product search](#product-search-elasticsearch)
-below for how the ASIN gets used to link back to the real Amazon listing.
-
-MongoDB has no native auto-increment, so product ids (still plain
-integers, not ObjectIds — every other service in this project keys on
-integer product ids: Kafka events, HBase rows, Cassandra partitions,
-so switching `product-service` alone to ObjectId strings would ripple
-pointlessly across the rest of the system for no real benefit here)
-come from an atomic `$inc` against a dedicated counters document, the
-standard MongoDB pattern for this.
-
-**Verified, not assumed:** created a product through the API, queried
-it back three ways — the API response, a direct `mongosh` query
-against the container, and through `recommendation-service`'s existing
-product-enrichment call — and got byte-identical enriched data all
-three times.
+dataset via `scripts/fetch_amazon_products.py`.
 
 ## Product search: Elasticsearch
 
-`product-service` indexes every product into Elasticsearch — full-text
-across name/description/tags, structured filters (`category`, `brand`,
-`price_min`/`price_max`, `rating_min`), sort options (price, rating),
-and a `geo_point` built from the same warehouse `location` MongoDB
-already stores (see [Product catalog](#product-catalog-mongodb)
-above), so nothing extra had to be seeded for this to work.
+`product-service` indexes every product for full-text search,
+structured filters (category, brand, price range, minimum rating),
+sort, and geo-distance filtering over the same warehouse location
+MongoDB already stores:
 
 ```bash
-# Full-text
 curl "http://localhost:8001/products/search?q=noise+cancelling"
-
-# Structured filters: category, brand, price range, minimum rating, sort
 curl "http://localhost:8001/products/search?category=electronics&brand=Anker&price_max=50&rating_min=4&sort=rating_desc"
-
-# Geo-filtered: within 10km of a point
 curl "http://localhost:8001/products/search?lat=30.2672&lon=-97.7431&radius_km=10"
 ```
 
-Elasticsearch has no persistent volume here — it's a derived index, not
-a source of truth, so on every restart it starts empty and
-self-heals: `product-service`'s startup reindexes everything from
-MongoDB (the actual source of truth), and every new product is also
-indexed immediately on creation.
+Elasticsearch has no persistent volume here, so on restart
+`product-service` reindexes everything from MongoDB (the actual
+source of truth), and every new product is indexed immediately on
+creation.
 
-**Verified, not assumed — including that the geo-filter actually
-filters, not just accepts the parameters:** looked up which 61 of the
-300 real products share the Austin warehouse coordinates, ran a
-10km-radius geo search centered on Austin, and got back exactly those
-61 product ids and no others. Also created a new product through the
-API and confirmed it was full-text searchable within about a second
-(Elasticsearch's near-real-time refresh), without waiting for the
-startup backfill.
+Runs single-node with `number_of_replicas=0` and security disabled --
+fine for a local demo, but a real deployment would need a proper
+cluster and auth in front of it.
 
-This also caught a real bug worth noting: deleting the Elasticsearch
-index out-of-band (`curl -X DELETE .../products`) and then indexing
-through the running `product-service` process — instead of restarting
-it — let Elasticsearch auto-create the index with a *dynamic* mapping
-guessed from the first document, which mapped `location` as a plain
-`{lat, lon}` object instead of `geo_point`, silently breaking
-geo-filtering with a 400 on every geo search. The explicit mapping in
-`search_client.py` only gets applied by `ensure_index()`, which only
-runs at process startup — so the fix is restarting the service (or
-never deleting the index without also restarting), not just
-re-indexing data into whatever mapping happens to exist.
+## Serving Layer Performance: Indexing, Partitioning & Refresh Intervals
+
+I added a small optimizer (`serving-optimizer`, port 8007) that
+watches recent usage and adjusts Postgres, Cassandra, and
+Elasticsearch based on what it's seeing. I based it on
+[auto-indexing](https://github.com/nimit-pasricha/auto-indexing),
+which does the same for Postgres alone -- I extended it to Cassandra
+and Elasticsearch, reading telemetry straight from each store instead
+of building a separate pipeline.
+
+**Postgres: index creation and cleanup**
+
+- *Problem:* nothing was watching `pg_stat_statements` for repeatedly
+  filtered columns with no index to back them.
+- *Solution:* every 15s poll, a column that crosses 20 calls since the
+  last cycle gets `CREATE INDEX CONCURRENTLY`'d, gated by table-size
+  (≥20 rows), cardinality (≥5% distinct values), and write/read ratio
+  (≤3.0) guards so it doesn't index tiny tables, low-cardinality
+  columns, or write-heavy ones. An index with no matching query for 3
+  consecutive cycles gets dropped.
+- *Trade-off:* it won't index a column for query patterns it hasn't
+  seen yet, even if a human would.
+
+**Cassandra: hot/cold partition rollups**
+
+- *Problem:* `product_demand_by_minute` has one row per product per
+  minute, so a wide-time-range dashboard query for a busy product
+  reads a lot of rows for one number.
+- *Solution:* each cycle sums every product's volume over the last 60
+  minutes; products at or above 50 events get marked hot and get an
+  hourly rollup in `product_demand_by_hour`, so wide-range queries
+  read pre-aggregated hours instead of raw minutes. Recent partitions
+  come from a separate `active_partitions` table (partitioned by date
+  alone), not a scan of every partition `product_demand_by_minute`
+  has ever had.
+- *Trade-off:* at this project's data volume, partitions are nowhere
+  near Cassandra's real large-partition threshold, so the rollup
+  isn't solving a problem this demo's traffic actually has.
+
+**Elasticsearch: refresh-interval tuning**
+
+- *Problem:* the default 1s `refresh_interval` means every index
+  write pays a near-real-time refresh cost, which is fine for one
+  product at a time but wasteful during a bulk load.
+- *Solution:* indexing ops are tracked per 15s window; crossing 15 ops
+  in a window (above normal single-product-create traffic) raises
+  `refresh_interval` to 5s until the burst passes, then resets it to 1s.
+- *Trade-off:* products indexed during a burst take up to 5s instead
+  of ~1s to become searchable; normal traffic is unaffected.
+
+Decisions are logged to their own audit table and surfaced live in the
+dashboard's Autonomous Tuning panel.
 
 ## Dashboard: Flask
 
-A single web page (`http://localhost:8006`) ties together the
-serving-layer pieces above — it's a thin server-side proxy, deliberately:
-the browser only ever talks to Flask, never directly to
-product-service/analytics-service/recommendation-service, so there's no
-CORS setup and backend URLs stay server-side config, not exposed to the
-client.
+A single web page (`http://localhost:8006`) ties everything above
+together as a thin server-side proxy — the browser only ever talks to
+Flask, never directly to the backend services.
 
-- **Product Search** — full-text, structured filters (category, brand,
-  price range, minimum rating), sort, and geo-filtering, all hitting
-  Elasticsearch through `product-service`. Each result card shows the
-  real product photo, brand, price, and rating, plus a **View on
-  Amazon** link built from the product's real ASIN
-  (`amazon.com/dp/<asin>`) — see [Product catalog](#product-catalog-mongodb).
-- **Top Products** and **Event Volume by Day** — Chart.js panels
-  fed by `analytics-service`'s SQL (Postgres) aggregates:
-  `GET /analytics/top-products` (views/cart-adds/purchases per
-  product, with names resolved via a batch product lookup) and
-  `GET /analytics/summary` (daily event counts grouped by type).
-- **Live Demand** — a Chart.js line chart for a chosen product id,
-  polling every 5 seconds; the data comes from Cassandra, populated by
-  the Spark Structured Streaming job in real time.
-- **Personalized Recommendations** — looks up a visitor's precomputed
-  ALS recommendations from HBase through `recommendation-service`.
+- **Product Search** — full-text, filters, sort, and geo-search
+  against Elasticsearch, with real product photos and a **View on
+  Amazon** link built from each product's ASIN.
+- **Top Products** and **Event Volume by Day** — Chart.js panels fed
+  by `analytics-service`'s SQL aggregates.
+- **Live Demand** — a polling Chart.js line chart backed by Cassandra,
+  updated in real time by the Spark Streaming job.
+- **Personalized Recommendations** — precomputed ALS recommendations
+  served from HBase.
+- **Autonomous Tuning** — a live feed of `serving-optimizer`'s
+  decisions and status.
 
-**Verified interactively in an actual browser, not just via curl:**
-typed a search query and confirmed the UI filtered to the one matching
-product; set a max-price filter and a rating sort and confirmed the
-network request carried the right query params and every result
-respected both; entered Austin's coordinates in the geo search form
-and got back the exact same 61 product ids verified earlier at the API
-level; pushed 15 fresh events for a product through the real ingestion
-pipeline (`event-service` → Kafka → Spark → Cassandra) and watched the
-demand chart update on its own within one polling cycle, with no page
-reload or manual action — genuine end-to-end live behavior, not a
-static mock.
+## Benchmarks
+
+Measured locally on Docker Desktop, not a production cluster:
+
+```
+Kafka ingestion:         500-650+ events/sec sustained, 8 cores, all
+                          requests returned 202 (scripts/kafka_load_test.py)
+Kafka topic:              3 partitions, 1 broker, unkeyed (round-robin)
+Spark trigger interval:   30s for both streaming queries
+Anomaly detection:        one controlled 60-event/10s burst, flagged at z_score=32.17
+ALS Precision@10:         0.0055 (RetailRocket, ~2.75M events, ~1.4M users)
+HBase point lookup:       ~10ms average over the REST layer
+Product catalog:          300 Amazon products
+```
 
 ## Running locally
 
 Requires Docker and Docker Compose, with **at least 12GB** allocated
-to Docker Desktop (Settings → Resources → Memory) — the growing set of
-big-data infrastructure needs real headroom.
+to Docker Desktop (Settings → Resources → Memory).
 
 ```bash
 docker compose up --build
 ```
 
-This starts Postgres, MongoDB, Elasticsearch, Kafka, HDFS (namenode +
-datanode), ZooKeeper, HBase (master + regionserver + REST server),
-Cassandra, a Spark standalone cluster (master + worker + the streaming
-job), all six FastAPI/worker services, and the Flask dashboard at
-[http://localhost:8006](http://localhost:8006). Wait for the logs to
-settle, then seed some sample data:
+Starts every store and service, including the dashboard at
+[http://localhost:8006](http://localhost:8006). Once the logs settle,
+seed some sample data:
 
 ```bash
 pip install requests
 python scripts/seed_data.py
 ```
 
-To verify real ingestion throughput (not an assumed number):
+To measure ingestion throughput (see Benchmarks):
 
 ```bash
 pip install httpx
 python scripts/kafka_load_test.py --duration 15 --processes 8 --concurrency 32
 ```
 
-On an 8-core machine this measures 500-650+ events/sec sustained
-through the actual HTTP → Kafka path, with zero message loss verified
-against Kafka's own offset counts.
-
-To inspect the raw event archive `hdfs-sink` has written to HDFS:
+To inspect the raw event archive `hdfs-sink` has written:
 
 ```bash
 docker compose exec hdfs-namenode hdfs dfs -ls /events/dt=$(date +%Y-%m-%d)/
@@ -468,19 +355,16 @@ docker compose exec hdfs-namenode hdfs dfs -cat /events/dt=$(date +%Y-%m-%d)/*.j
 The namenode's web UI is also available at
 [http://localhost:9870](http://localhost:9870).
 
-To run the product-popularity **MapReduce** batch job over the HDFS
-archive (Hadoop Streaming, Python mapper/reducer — see
-[Batch layer: MapReduce](#batch-layer-mapreduce) below):
+To run the **MapReduce** popularity job over the HDFS archive:
 
 ```bash
 docker compose --profile jobs run --rm mapreduce-product-popularity
 ```
 
-To train the **ALS recommendation model**: download the RetailRocket
-dataset from [Kaggle](https://www.kaggle.com/datasets/retailrocket/ecommerce-dataset)
-(requires a free account — there's no unauthenticated mirror), unzip
-it into `data/retailrocket/` (gitignored — the dataset isn't checked
-into this repo), then load it into HDFS and run the job:
+To train the **ALS model**: download the RetailRocket dataset from
+[Kaggle](https://www.kaggle.com/datasets/retailrocket/ecommerce-dataset)
+(free account required), unzip into `data/retailrocket/` (gitignored),
+then load it into HDFS and run the job:
 
 ```bash
 docker cp data/retailrocket/events.csv <namenode-container>:/tmp/events.csv
@@ -490,12 +374,7 @@ docker compose --profile jobs up -d als-training
 docker compose logs -f als-training
 ```
 
-See [ALS recommendation model](#als-recommendation-model-spark-mllib)
-below for the real (not curated) Precision@10 result and why it looks
-the way it does.
-
-Then load those recommendations into **HBase** for live, low-latency
-lookups (see [Serving layer: HBase](#serving-layer-hbase)):
+Then load those recommendations into **HBase**:
 
 ```bash
 docker compose --profile jobs up hbase-load-recommendations
@@ -505,42 +384,77 @@ curl http://localhost:8004/recommendations/precomputed/54
 Then try the API:
 
 ```bash
-# Personalized recommendations for user 1
 curl http://localhost:8004/recommendations/1
-
-# Items similar to product 3
 curl http://localhost:8004/recommendations/similar/3
-
-# Most popular products (fallback / cold-start)
 curl http://localhost:8004/recommendations/popular
 
-# Analytics
 curl http://localhost:8005/analytics/top-products
 curl http://localhost:8005/analytics/summary
+
+curl http://localhost:8007/tuning/decisions
+curl http://localhost:8007/tuning/status
 ```
 
 Every service also exposes interactive API docs at
-`http://localhost:<port>/docs` (FastAPI/Swagger UI), e.g.
-`http://localhost:8004/docs`.
+`http://localhost:<port>/docs` (FastAPI/Swagger UI).
 
 To stop everything:
 
 ```bash
 docker compose down        # stop containers, keep data
-docker compose down -v     # stop containers and wipe the Postgres volume
+docker compose down -v     # stop containers and wipe volumes
 ```
+
+## Tests
+
+`tests/` covers pure logic that doesn't need the stack running: the
+recommendation engine's cosine similarity, `sql_analyzer`'s query
+classification, `pg_optimizer`'s call-delta math, the MapReduce
+mapper/reducer, and event-service's Pydantic validation. Imports the
+real service code directly, no Docker required:
+
+```bash
+pip install -r tests/requirements.txt
+pytest
+```
+
+CI (`.github/workflows/ci.yml`) runs `compileall` and this suite on
+every push and pull request.
+
+## Setup notes
+
+- **Memory**: per-container `mem_limit`s in `docker-compose.yml` sum
+  to ~17GB, but that's a ceiling, not concurrent usage -- 12GB works
+  in practice. Below that, Elasticsearch, Cassandra, or a Spark
+  container is usually first to get OOM-killed (`Exited (137)`); give
+  Docker Desktop more RAM or lower that service's `mem_limit`.
+- **Apple Silicon**: `hdfs-namenode`/`hdfs-datanode` and the HBase
+  services build from source instead of pulling an image, since the
+  official Hadoop/HBase images are amd64-only -- the first
+  `docker compose up --build` takes longer as a result.
+- **Restarting a single service can leave others down**:
+  `docker compose up -d <service>` only starts its dependency
+  subgraph. After any interruption, prefer a plain `docker compose
+  up -d` with no service name.
+- **Kafka's default 7-day retention** applies to the `events` topic.
+  After a long idle stretch, `recommendation-service`/
+  `analytics-service` may restart with less history than expected —
+  re-run `scripts/seed_data.py` to refill it.
 
 ## Project layout
 
 ```
 .
 ├── docker-compose.yml
+├── pytest.ini
+├── .github/workflows/ci.yml     # compileall + pytest on push/PR
+├── tests/                        # unit tests, see Tests above
 ├── infra/
 │   ├── postgres/init-db.sql     # creates one database per service
 │   ├── hadoop/                  # custom native-arm64 HDFS image
 │   └── hbase/                   # custom native-arm64 HBase image
 ├── scripts/
-│   ├── fetch_amazon_products.py # pulls 300 real product records from Amazon-Reviews-2023
+│   ├── fetch_amazon_products.py # pulls 300 product records from Amazon-Reviews-2023
 │   ├── seed_data.py             # loads data/amazon_products.json + simulated traffic
 │   └── kafka_load_test.py       # measures real ingestion throughput
 ├── jobs/
@@ -548,7 +462,7 @@ docker compose down -v     # stop containers and wipe the Postgres volume
 │   ├── spark-streaming/         # Structured Streaming: sessions + anomalies + Cassandra writer
 │   └── als-training/            # Spark MLlib ALS training + evaluation
 ├── data/
-│   ├── amazon_products.json     # 300 real Amazon products (committed -- small enough to track)
+│   ├── amazon_products.json     # 300 Amazon products (committed -- small enough to track)
 │   └── retailrocket/            # gitignored -- download separately, see below
 └── services/
     ├── product-service/
@@ -558,6 +472,7 @@ docker compose down -v     # stop containers and wipe the Postgres volume
     ├── analytics-service/
     ├── hdfs-sink/                # Kafka -> HDFS batching worker
     ├── hbase-loader/             # HDFS -> HBase recommendations loader
+    ├── serving-optimizer/        # autonomous Postgres/Cassandra/ES tuner
     └── dashboard/                # Flask UI: search + live demand + recommendations
 ```
 
@@ -575,71 +490,42 @@ Each service directory follows the same shape:
     └── crud.py         # DB access helpers
 ```
 
-## Roadmap
+## Trade-offs and lessons learned
 
-This project is being built out toward a full Lambda Architecture.
-Current status:
+- **Two disconnected id spaces.** ALS trains on RetailRocket's own
+  item ids; the demo catalog has its own (see the HBase section) --
+  `/recommendations/precomputed/{id}` can't be enriched through
+  `product-service` as a result. In a v2 I'd train ALS on the demo
+  catalog directly, or add an explicit id mapping.
 
-- [x] Five FastAPI microservices, database-per-service
-- [x] Kafka (KRaft mode) as the event bus, replacing an earlier
-      Redis Streams prototype — verified 500+ events/sec sustained
-      ingestion with zero message loss
-- [x] HDFS for raw event storage (batch layer input), fed by a
-      Kafka-to-HDFS sink — verified zero data loss and restart-safe
-      (committed offsets, no duplicate writes) on a native-arm64 build
-- [x] MapReduce batch job for product popularity rankings (Hadoop
-      Streaming, LocalJobRunner) — verified against two independent
-      computations of the same ranking, identical results
-- [x] Spark Structured Streaming for session reconstruction and
-      Z-score demand anomaly detection (speed layer) — verified with a
-      real baseline-then-spike traffic test (z_score=32.17 correctly
-      flagged) and a real session that produced the exact expected
-      HDFS output
-- [x] Spark MLlib ALS collaborative filtering, trained on the real
-      RetailRocket e-commerce dataset (2.75M events, downloaded from
-      Kaggle, verified against published dataset stats) — measured
-      Precision@10 = 0.0055, reported honestly rather than a curated
-      or aspirational number (see
-      [ALS recommendation model](#als-recommendation-model-spark-mllib)
-      for why it's this low and what it would take to improve it)
-- [x] HBase for low-latency user-item lookups (real HDFS-backed
-      storage, not standalone mode) — verified with an exact-match
-      lookup against the HDFS source data, ~10ms measured real-world
-      latency, and unplanned proof of durability (survived an
-      accidentally-destroyed master container without data loss)
-- [x] Cassandra for time-series demand analytics, partitioned by
-      (product_id, day) — the same window counts already computed for
-      Z-score anomaly detection, reused rather than recomputed;
-      verified row-count-exact against Spark's own batch log and
-      cross-checked via `cqlsh` and the live HTTP endpoint
-- [x] MongoDB for enriched product data — a genuine migration off
-      Postgres (not bolted on alongside it), with real nested/
-      variable-shape enrichment (tags, specs, images, geo location,
-      rating); verified byte-identical data across the API, a direct
-      `mongosh` query, and `recommendation-service`'s existing
-      enrichment call
-- [x] Elasticsearch for full-text and geo-filtered product search,
-      self-healing (reindexes from MongoDB on every restart, since ES
-      holds no persistent volume) — geo-filter verified against exactly
-      the known set of products at one warehouse's coordinates, not
-      just that the parameter was accepted
-- [x] A Flask dashboard tying search, live demand, and recommendations
-      into one view — verified interactively in a real browser
-      (typed search, geo search, and watched the live demand chart
-      auto-update within one polling cycle after pushing real events
-      through the actual ingestion pipeline), not just via curl
-- [x] Replaced the synthetic 20-product demo catalog with 300 real
-      Amazon products (real titles, brands, prices, images, ratings,
-      ASINs) from the public Amazon-Reviews-2023 dataset; added brand/
-      price/rating filters and sort to search, real "View on Amazon"
-      links, and two new SQL-backed (Postgres) dashboard charts —
-      verified end-to-end in a real browser, including catching and
-      fixing a real Elasticsearch geo-mapping regression introduced
-      during the reseed (see
-      [Product search](#product-search-elasticsearch))
+- **Spark's `update` output mode was the trickiest bug to get
+  right.** The Cassandra writer upserts each window's running total
+  instead of incrementing a counter, since a naive increment
+  double-counts every time Spark re-emits a window.
 
-## Possible further extensions
+- **Autonomous systems need a real failure to prove themselves.**
+  `serving-optimizer`'s Postgres tuner had nothing to act on until
+  `user-service` had a real unindexed, filtered query in traffic --
+  the `country` filter exists specifically to give it one.
 
-- Add an API gateway / BFF in front of the microservices.
-- Add authentication (JWT) between services and at the edge.
-- Multiple recommendation-service replicas behind a load balancer.
+- **Running ~20 containers on one machine is its own kind of ops
+  work.** Every JVM-heavy store needed its own memory-limit tuning
+  pass to stop them competing for the same 12GB -- a cost of the
+  single-host demo, not of the architecture itself.
+
+- **What I'd cut in a v2:** the in-memory CF model and the batch ALS
+  model both rank products for a user with no blending strategy
+  between them. A v2 would pick one, or define how they combine,
+  instead of exposing both as separate endpoints.
+
+## Why this project
+
+I wanted to see what actually happens when one event stream has to
+feed real-time recommendations, rolling analytics, a batch pipeline,
+and a serving layer at the same time, instead of reading about Lambda
+Architecture in the abstract. Building all four consumers off the
+same Kafka topic surfaced problems a single-service tutorial never
+would -- keeping the Cassandra writer correct under Spark's `update`
+mode, or noticing partway through that the ALS model and the
+in-memory CF model had no real relationship to each other. More on
+that in [Trade-offs and lessons learned](#trade-offs-and-lessons-learned).
