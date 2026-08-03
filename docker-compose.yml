@@ -1,0 +1,90 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  product-service:
+    build: ./services/product-service
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/product_db
+    ports:
+      - "8001:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  user-service:
+    build: ./services/user-service
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/user_db
+    ports:
+      - "8002:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  event-service:
+    build: ./services/event-service
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/event_db
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8003:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  recommendation-service:
+    build: ./services/recommendation-service
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      PRODUCT_SERVICE_URL: http://product-service:8000
+    ports:
+      - "8004:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+      event-service:
+        condition: service_started
+
+  analytics-service:
+    build: ./services/analytics-service
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/analytics_db
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "8005:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      event-service:
+        condition: service_started
+
+volumes:
+  pgdata:
