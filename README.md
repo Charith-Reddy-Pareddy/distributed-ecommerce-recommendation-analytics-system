@@ -228,6 +228,50 @@ the ~39,600 users with enough history to recommend for (not the full
 HDFS, at `/models/als-recommender` and `/output/als-recommendations`
 respectively.
 
+## Serving layer: HBase
+
+HDFS is fine for batch reads but isn't a point-lookup store — turning
+"the ALS output sits in HDFS" into "a live service can fetch a user's
+precomputed recommendations in milliseconds" needs something else.
+That's what HBase is for here: a real HBase cluster (master +
+regionserver + ZooKeeper, all custom-built the same way as the Hadoop
+image — there's no official Apache HBase Docker image at all, let
+alone an arm64 one), backed by **real HDFS storage**
+(`hbase.rootdir=hdfs://...`), not HBase's local-disk standalone mode.
+
+`services/hbase-loader` (a one-shot job, like the MapReduce job) reads
+`/output/als-recommendations` from HDFS and loads it into an
+`als_recommendations` HBase table — one row per user, ranked
+item/score pairs as columns. `recommendation-service` then queries
+HBase's built-in REST server for a new endpoint:
+
+```bash
+curl http://localhost:8004/recommendations/precomputed/54
+```
+
+**Verified, not assumed:**
+- Loaded all 39,632 rows, then queried a known user via HBase's REST
+  API directly and confirmed the returned item ids and scores matched
+  the HDFS source data exactly.
+- Measured real point-lookup latency over 20 requests: **~10ms average
+  (5ms min, 48ms max)** through the HTTP REST layer — a native HBase
+  client would be faster still, since REST adds its own overhead.
+- Killed the `hbase-master` container outright (by accident, while
+  writing a cleanup command — caught immediately) and confirmed the
+  data survived and the cluster reconnected cleanly once it restarted,
+  since HBase's actual state lives in HDFS/ZooKeeper, not the
+  container itself.
+
+One honest caveat: the ALS model's ids are RetailRocket's real item
+ids (large arbitrary numbers like `9877`), not this project's own demo
+product catalog (ids 1-20, seeded via `scripts/seed_data.py`). They're
+intentionally separate id spaces — RetailRocket exists to train and
+evaluate a real model at real scale, the demo catalog exists to
+exercise the live microservices end-to-end without needing a full
+external catalog wired into every service — so `/recommendations/precomputed/{id}`
+does not (and cannot) enrich its results via `product-service` the way
+the other recommendation endpoints do.
+
 ## Running locally
 
 Requires Docker and Docker Compose, with **at least 12GB** allocated
@@ -238,8 +282,9 @@ big-data infrastructure needs real headroom.
 docker compose up --build
 ```
 
-This starts Postgres, Kafka, HDFS (namenode + datanode), a Spark
-standalone cluster (master + worker + the streaming job), and all six
+This starts Postgres, Kafka, HDFS (namenode + datanode), ZooKeeper,
+HBase (master + regionserver + REST server), a Spark standalone
+cluster (master + worker + the streaming job), and all six
 FastAPI/worker services. Wait for the logs to settle, then seed some
 sample data:
 
@@ -295,6 +340,14 @@ See [ALS recommendation model](#als-recommendation-model-spark-mllib)
 below for the real (not curated) Precision@10 result and why it looks
 the way it does.
 
+Then load those recommendations into **HBase** for live, low-latency
+lookups (see [Serving layer: HBase](#serving-layer-hbase)):
+
+```bash
+docker compose --profile jobs up hbase-load-recommendations
+curl http://localhost:8004/recommendations/precomputed/54
+```
+
 Then try the API:
 
 ```bash
@@ -330,7 +383,8 @@ docker compose down -v     # stop containers and wipe the Postgres volume
 ├── docker-compose.yml
 ├── infra/
 │   ├── postgres/init-db.sql     # creates one database per service
-│   └── hadoop/                  # custom native-arm64 HDFS image
+│   ├── hadoop/                  # custom native-arm64 HDFS image
+│   └── hbase/                   # custom native-arm64 HBase image
 ├── scripts/
 │   ├── seed_data.py             # sample data + simulated traffic
 │   └── kafka_load_test.py       # measures real ingestion throughput
@@ -345,7 +399,8 @@ docker compose down -v     # stop containers and wipe the Postgres volume
     ├── event-service/
     ├── recommendation-service/
     ├── analytics-service/
-    └── hdfs-sink/                # Kafka -> HDFS batching worker
+    ├── hdfs-sink/                # Kafka -> HDFS batching worker
+    └── hbase-loader/             # HDFS -> HBase recommendations loader
 ```
 
 Each service directory follows the same shape:
@@ -389,7 +444,11 @@ Current status:
       or aspirational number (see
       [ALS recommendation model](#als-recommendation-model-spark-mllib)
       for why it's this low and what it would take to improve it)
-- [ ] HBase for low-latency user-item lookups
+- [x] HBase for low-latency user-item lookups (real HDFS-backed
+      storage, not standalone mode) — verified with an exact-match
+      lookup against the HDFS source data, ~10ms measured real-world
+      latency, and unplanned proof of durability (survived an
+      accidentally-destroyed master container without data loss)
 - [ ] Cassandra for time-series demand analytics
 - [ ] MongoDB for enriched product data
 - [ ] Elasticsearch for full-text and geo-filtered product search

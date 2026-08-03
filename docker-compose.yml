@@ -124,6 +124,102 @@ services:
     volumes:
       - ./jobs/product-popularity:/job
 
+  # HBase's serving layer -- low-latency point lookups for the ALS
+  # recommendations precomputed in HDFS, and (eventually) any other
+  # user-item data that benefits from key-value access instead of a
+  # full Spark job. Storage is real HDFS (hbase.rootdir points at the
+  # namenode above), not HBase's local-disk standalone mode.
+  #
+  # HBase still requires ZooKeeper for master election / region
+  # coordination -- unlike Kafka, there's no KRaft-equivalent for it.
+  # The official zookeeper image does publish native arm64 builds.
+  zookeeper:
+    image: zookeeper:3.9
+    environment:
+      # Recent ZooKeeper versions disable most 4-letter-word admin
+      # commands by default for security -- only "srvr" is enabled out
+      # of the box, so a healthcheck relying on the classic "ruok" probe
+      # silently fails forever unless it's explicitly whitelisted.
+      ZOO_4LW_COMMANDS_WHITELIST: ruok,srvr,stat
+    ports:
+      - "2181:2181"
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc localhost 2181 | grep -q imok"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 20s
+
+  hbase-master:
+    build: ./infra/hbase
+    command: ["/entrypoint-master.sh"]
+    environment:
+      HBASE_OPTS: -Xmx768m
+    ports:
+      - "16010:16010"  # web UI
+    mem_limit: 1024m
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+      hdfs-datanode:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:16010/ > /dev/null"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+
+  hbase-regionserver:
+    build: ./infra/hbase
+    command: ["/entrypoint-regionserver.sh"]
+    environment:
+      HBASE_OPTS: -Xmx1024m
+    mem_limit: 1280m
+    depends_on:
+      hbase-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:16030/ > /dev/null"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+
+  # HTTP interface onto HBase (the "Stargate" REST server bundled with
+  # HBase itself) -- lets recommendation-service query HBase over plain
+  # HTTP instead of needing a JVM/Thrift client from a Python service.
+  hbase-rest:
+    build: ./infra/hbase
+    command: ["/entrypoint-rest.sh"]
+    ports:
+      - "8095:8080"
+    mem_limit: 512m
+    depends_on:
+      hbase-regionserver:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/version > /dev/null"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+
+  # One-shot job -- loads the ALS recommendations already computed and
+  # sitting in HDFS (see als-training above) into HBase for low-latency
+  # point lookups. Kept out of `docker compose up` behind the "jobs"
+  # profile, same as the other batch jobs.
+  hbase-load-recommendations:
+    build: ./services/hbase-loader
+    profiles: ["jobs"]
+    environment:
+      WEBHDFS_URL: http://hdfs-namenode:9870
+      HBASE_REST_URL: http://hbase-rest:8080
+    depends_on:
+      hbase-rest:
+        condition: service_healthy
+
   # Spark standalone cluster (the speed layer's compute engine) -- the
   # official apache/spark image supports native arm64, unlike the Hadoop
   # images, so no custom build needed here.
@@ -168,16 +264,20 @@ services:
       # spark-streaming is explicitly capped (see below) so batch jobs
       # always have cores left to run on.
       SPARK_WORKER_CORES: "4"
-      # 5g: streaming permanently holds 1g, and ALS training's executor
-      # alone requests 2.5g -- 3g total left only ~2g free once streaming
-      # is running, not enough for a 2.5g executor to launch at all
-      # (Spark Standalone needs both cores AND memory free simultaneously;
-      # discovered when als-training sat WAITING despite 2 free cores).
-      # 5g leaves comfortable headroom for both to run concurrently,
-      # still well inside this stack's 12GB budget.
-      SPARK_WORKER_MEMORY: 5g
+      # 2g for everyday operation (streaming only needs ~1g). The one-shot
+      # als-training job needed 5g (its 2.5g executor plus streaming's
+      # permanent 1g left too little free memory for both to run at once
+      # -- Spark Standalone needs cores AND memory free simultaneously,
+      # discovered when als-training sat WAITING despite having free
+      # cores). That was a temporary bump for that specific job, not a
+      # standing requirement -- as more memory-hungry services (Cassandra,
+      # MongoDB, Elasticsearch) join the default `docker compose up`
+      # footprint, keeping this at its actual day-to-day need matters more
+      # than it did early on. Bump back to 5g (SPARK_WORKER_MEMORY and
+      # mem_limit both) if you need to rerun ALS training.
+      SPARK_WORKER_MEMORY: 2g
       PYTHONPATH: /tmp/pylibs
-    mem_limit: 5500m
+    mem_limit: 2500m
     depends_on:
       spark-master:
         condition: service_healthy
@@ -301,6 +401,7 @@ services:
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       PRODUCT_SERVICE_URL: http://product-service:8000
+      HBASE_REST_URL: http://hbase-rest:8080
     ports:
       - "8004:8000"
     depends_on:
@@ -308,6 +409,8 @@ services:
         condition: service_healthy
       event-service:
         condition: service_started
+      hbase-rest:
+        condition: service_healthy
 
   analytics-service:
     build: ./services/analytics-service

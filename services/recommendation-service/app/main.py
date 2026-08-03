@@ -2,8 +2,9 @@ import os
 from contextlib import asynccontextmanager
 
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
+from .hbase_client import get_precomputed_recommendations
 from .model import engine
 
 PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL", "http://localhost:8001")
@@ -53,6 +54,17 @@ async def similar(product_id: int, n: int = 5):
 async def popular(n: int = 10):
     scored = engine.popular_items(top_n=n)
     return {"popular_products": await _enrich_with_products(scored)}
+
+
+# Batch-layer recommendations (Spark MLlib ALS, trained offline on the
+# RetailRocket dataset, served from HBase for low-latency lookups) --
+# a different id space than the demo catalog, see hbase_client.py.
+@app.get("/recommendations/precomputed/{visitor_id}")
+async def precomputed(visitor_id: int):
+    recs = await get_precomputed_recommendations(visitor_id)
+    if recs is None:
+        raise HTTPException(status_code=404, detail="No precomputed recommendations for this visitor_id")
+    return {"visitor_id": visitor_id, "source": "als-hbase", "recommendations": recs}
 
 
 @app.get("/recommendations/{user_id}")
