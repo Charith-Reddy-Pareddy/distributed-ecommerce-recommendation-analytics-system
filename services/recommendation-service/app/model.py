@@ -1,23 +1,25 @@
 """In-memory item-based collaborative filtering engine.
 
-The engine rebuilds its state by replaying the full Redis Stream on
-startup (so restarts don't lose history), then keeps listening for new
-events and updates its interaction matrices incrementally. This keeps
-the service stateless from a deployment point of view -- Redis is the
-durable source of truth, this process just holds a fast in-memory
-projection of it.
+The engine rebuilds its state by replaying the full Kafka `events`
+topic on startup (so restarts don't lose history), then keeps
+listening for new events and updates its interaction matrices
+incrementally. This keeps the service stateless from a deployment
+point of view -- Kafka is the durable source of truth, this process
+just holds a fast in-memory projection of it.
 
-For a small/medium catalog this dense-dict approach is simple and fast
-enough. At larger scale you'd swap this for a proper ANN/matrix-
-factorization pipeline (e.g. implicit, Spark ALS) writing precomputed
-recommendations to a store like Redis or a feature store.
+This dense in-memory engine is the *speed-layer-adjacent* recommender:
+fast, always-current, but rebuilt from scratch on every restart. The
+Spark MLlib ALS model (batch layer) is the higher-quality recommender
+trained offline on the full historical dataset; HBase will serve its
+precomputed output. This engine remains as the real-time fallback /
+comparison baseline.
 """
 import json
 import math
 import threading
 from collections import defaultdict
 
-from .redis_client import STREAM_NAME, redis_client
+from .kafka_consumer import new_consumer
 
 EVENT_WEIGHTS = {"view": 1.0, "add_to_cart": 3.0, "purchase": 5.0}
 
@@ -27,7 +29,6 @@ class RecommendationEngine:
         self._lock = threading.Lock()
         self.user_item: dict[int, dict[int, float]] = defaultdict(dict)
         self.item_users: dict[int, dict[int, float]] = defaultdict(dict)
-        self._last_id = "0-0"
 
     def _apply_event(self, event: dict) -> None:
         user_id = event["user_id"]
@@ -42,26 +43,19 @@ class RecommendationEngine:
                 self.item_users[product_id].get(user_id, 0.0) + weight
             )
 
-    def bootstrap(self) -> None:
-        for entry_id, fields in redis_client.xrange(STREAM_NAME, min="-", max="+"):
-            self._apply_event(json.loads(fields["data"]))
-            self._last_id = entry_id
-
-    def listen_forever(self) -> None:
-        while True:
-            response = redis_client.xread(
-                {STREAM_NAME: self._last_id}, block=5000, count=100
-            )
-            if not response:
-                continue
-            for _, entries in response:
-                for entry_id, fields in entries:
-                    self._apply_event(json.loads(fields["data"]))
-                    self._last_id = entry_id
+    def consume_forever(self) -> None:
+        consumer = new_consumer()
+        try:
+            while True:
+                msg = consumer.poll(timeout=1.0)
+                if msg is None or msg.error():
+                    continue
+                self._apply_event(json.loads(msg.value()))
+        finally:
+            consumer.close()
 
     def start(self) -> None:
-        self.bootstrap()
-        thread = threading.Thread(target=self.listen_forever, daemon=True)
+        thread = threading.Thread(target=self.consume_forever, daemon=True)
         thread.start()
 
     @staticmethod
