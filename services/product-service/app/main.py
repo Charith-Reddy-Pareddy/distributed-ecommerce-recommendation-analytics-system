@@ -1,8 +1,26 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, HTTPException
 
 from . import crud, schemas
+from .search_client import ensure_index, index_product, search_products
 
-app = FastAPI(title="Product Catalog Service")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await ensure_index()
+    # Self-healing backfill: Elasticsearch has no persistent volume here
+    # (its data is a derived index, not a source of truth), so on every
+    # restart it starts empty and needs repopulating from MongoDB, the
+    # actual source of truth. Also covers products that existed before
+    # this index did.
+    products = await crud.list_products(skip=0, limit=10_000)
+    for product in products:
+        await index_product(product)
+    yield
+
+
+app = FastAPI(title="Product Catalog Service", lifespan=lifespan)
 
 
 @app.get("/health")
@@ -13,6 +31,23 @@ def health():
 @app.post("/products", response_model=schemas.ProductOut, status_code=201)
 async def create_product(product: schemas.ProductCreate):
     return await crud.create_product(product)
+
+
+# Literal-path route must be registered before "/products/{product_id}"
+# below, or FastAPI will match "/products/search" as product_id="search".
+@app.get("/products/search")
+async def search(
+    q: str | None = None,
+    category: str | None = None,
+    lat: float | None = None,
+    lon: float | None = None,
+    radius_km: float | None = None,
+    limit: int = 20,
+):
+    results = await search_products(
+        query=q, category=category, lat=lat, lon=lon, radius_km=radius_km, limit=limit
+    )
+    return {"query": q, "category": category, "results": results}
 
 
 @app.get("/products", response_model=list[schemas.ProductOut])

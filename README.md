@@ -330,6 +330,40 @@ against the container, and through `recommendation-service`'s existing
 product-enrichment call — and got byte-identical enriched data all
 three times.
 
+## Product search: Elasticsearch
+
+`product-service` indexes every product into Elasticsearch — full-text
+across name/description/tags, plus a `geo_point` built from the same
+warehouse `location` MongoDB already stores (see
+[Product catalog](#product-catalog-mongodb) above), so nothing extra
+had to be seeded for this to work.
+
+```bash
+# Full-text
+curl "http://localhost:8001/products/search?q=noise+cancelling"
+
+# Category filter
+curl "http://localhost:8001/products/search?category=electronics"
+
+# Geo-filtered: within 10km of a point
+curl "http://localhost:8001/products/search?lat=30.2672&lon=-97.7431&radius_km=10"
+```
+
+Elasticsearch has no persistent volume here — it's a derived index, not
+a source of truth, so on every restart it starts empty and
+self-heals: `product-service`'s startup reindexes everything from
+MongoDB (the actual source of truth), and every new product is also
+indexed immediately on creation.
+
+**Verified, not assumed — including that the geo-filter actually
+filters, not just accepts the parameters:** looked up which 6 of the
+20 seeded products share the Austin warehouse coordinates, ran a
+10km-radius geo search centered on Austin, and got back exactly those
+6 product ids and no others. Also created a new product through the
+API and confirmed it was full-text searchable within about a second
+(Elasticsearch's near-real-time refresh), without waiting for the
+startup backfill.
+
 ## Running locally
 
 Requires Docker and Docker Compose, with **at least 12GB** allocated
@@ -340,10 +374,10 @@ big-data infrastructure needs real headroom.
 docker compose up --build
 ```
 
-This starts Postgres, MongoDB, Kafka, HDFS (namenode + datanode),
-ZooKeeper, HBase (master + regionserver + REST server), Cassandra, a
-Spark standalone cluster (master + worker + the streaming job), and
-all six FastAPI/worker services. Wait for the logs to settle, then seed some
+This starts Postgres, MongoDB, Elasticsearch, Kafka, HDFS (namenode +
+datanode), ZooKeeper, HBase (master + regionserver + REST server),
+Cassandra, a Spark standalone cluster (master + worker + the streaming
+job), and all six FastAPI/worker services. Wait for the logs to settle, then seed some
 sample data:
 
 ```bash
@@ -518,7 +552,11 @@ Current status:
       rating); verified byte-identical data across the API, a direct
       `mongosh` query, and `recommendation-service`'s existing
       enrichment call
-- [ ] Elasticsearch for full-text and geo-filtered product search
+- [x] Elasticsearch for full-text and geo-filtered product search,
+      self-healing (reindexes from MongoDB on every restart, since ES
+      holds no persistent volume) — geo-filter verified against exactly
+      the known set of products at one warehouse's coordinates, not
+      just that the parameter was accepted
 - [ ] A Flask dashboard tying search, live demand, and recommendations
       into one view
 

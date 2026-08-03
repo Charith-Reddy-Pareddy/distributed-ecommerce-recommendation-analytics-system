@@ -1,5 +1,6 @@
 from . import schemas
 from .database import next_product_id, products_collection
+from .search_client import index_product
 
 
 def _to_out(doc: dict) -> dict:
@@ -11,7 +12,9 @@ async def create_product(product: schemas.ProductCreate) -> dict:
     product_id = await next_product_id()
     doc = {"_id": product_id, **product.model_dump()}
     await products_collection.insert_one(doc)
-    return _to_out(doc)
+    out = _to_out(doc)
+    await index_product(out)
+    return out
 
 
 async def get_product(product_id: int) -> dict | None:

@@ -32,6 +32,28 @@ services:
       retries: 15
       start_period: 20s
 
+  # Full-text + geo-filtered product search. Security disabled
+  # (xpack.security.enabled=false) -- a reasonable simplification for a
+  # local single-node demo with no external exposure, not something
+  # you'd do in production. Single node, so replicas would just sit
+  # unassigned forever; product-service's indexing code sets
+  # number_of_replicas=0 on the index for this reason.
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    mem_limit: 1024m
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health > /dev/null"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 40s
+
   # Kafka in KRaft mode -- no separate Zookeeper container. Zookeeper is being
   # phased out of Kafka itself (KRaft has been the recommended mode since
   # Kafka 3.3+); skipping it also saves real memory in our resource budget.
@@ -419,10 +441,13 @@ services:
     build: ./services/product-service
     environment:
       MONGODB_URL: mongodb://mongo:27017
+      ELASTICSEARCH_URL: http://elasticsearch:9200
     ports:
       - "8001:8000"
     depends_on:
       mongo:
+        condition: service_healthy
+      elasticsearch:
         condition: service_healthy
 
   user-service:
