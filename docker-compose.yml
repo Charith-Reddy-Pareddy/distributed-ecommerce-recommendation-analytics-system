@@ -111,6 +111,22 @@ services:
       hdfs-datanode:
         condition: service_healthy
 
+  # A batch job, not a service -- it runs once and exits, so it's kept out
+  # of `docker compose up` (profile "jobs") and invoked on demand with
+  # `docker compose --profile jobs run --rm mapreduce-product-popularity`.
+  # Reuses the hdfs-namenode/datanode image (same Hadoop install, same
+  # client tools) rather than duplicating the ~450MB Hadoop download in a
+  # separate image; the actual job code is mounted in as a volume.
+  mapreduce-product-popularity:
+    build: ./infra/hadoop
+    profiles: ["jobs"]
+    command: ["/job/run_job.sh"]
+    volumes:
+      - ./jobs/product-popularity:/job
+    depends_on:
+      hdfs-datanode:
+        condition: service_healthy
+
   product-service:
     build: ./services/product-service
     environment:

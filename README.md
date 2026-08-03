@@ -108,6 +108,44 @@ State is rebuilt on startup by replaying the entire Kafka topic, so
 the service is stateless from a deployment standpoint — kill it,
 restart it, and it reconstructs itself from the event log.
 
+## Batch layer: MapReduce
+
+`jobs/product-popularity/` is a real Hadoop **MapReduce** job (via
+Hadoop Streaming, so the mapper/reducer are plain Python read from
+stdin/write to stdout rather than Java classes) that computes the same
+weighted popularity ranking as `recommendation-service`'s fallback,
+but as a batch computation over the full HDFS event archive instead of
+an in-memory streaming aggregate:
+
+1. **Mapper** (`mapper.py`) reads each archived event line and emits
+   `product_id -> weight` (1/3/5 for view/add_to_cart/purchase).
+2. Hadoop's shuffle phase groups and sorts these by key.
+3. **Reducer** (`reducer.py`) sums the weights per product, relying on
+   the standard streaming guarantee that all records for a key arrive
+   contiguously — the classic MapReduce accumulator pattern, not an
+   in-memory dict keyed by every product.
+4. A driver script (`run_job.sh`) submits the job, then sorts the
+   (typically small) aggregated result set and writes a final ranked
+   file back to HDFS at `/output/product-popularity-ranked.tsv`.
+
+The job runs via Hadoop's `LocalJobRunner` (`mapreduce.framework.name`
+defaults to `local`) rather than YARN — with a single datanode in this
+local cluster, a full YARN ResourceManager/NodeManager would add
+another two JVM services for no real distribution benefit, so this
+keeps the resource budget for the rest of the stack (Spark, HBase,
+Cassandra, MongoDB, Elasticsearch) intact while still running genuine
+Hadoop MapReduce semantics and APIs.
+
+**Verified, not just run**: the job's ranked output was checked against
+`recommendation-service`'s popularity fallback and `analytics-service`'s
+SQL-based aggregation — three independently implemented computations
+over the same event data, and all three produced identical rankings
+and identical scores for every product.
+
+It's a one-shot batch job, not a long-running service, so it's kept
+out of `docker compose up` behind a Compose profile — see
+[Running locally](#running-locally) for the invocation.
+
 ## Running locally
 
 Requires Docker and Docker Compose, with **at least 12GB** allocated
@@ -146,6 +184,14 @@ docker compose exec hdfs-namenode hdfs dfs -cat /events/dt=$(date +%Y-%m-%d)/*.j
 
 The namenode's web UI is also available at
 [http://localhost:9870](http://localhost:9870).
+
+To run the product-popularity **MapReduce** batch job over the HDFS
+archive (Hadoop Streaming, Python mapper/reducer — see
+[Batch layer: MapReduce](#batch-layer-mapreduce) below):
+
+```bash
+docker compose --profile jobs run --rm mapreduce-product-popularity
+```
 
 Then try the API:
 
@@ -186,6 +232,8 @@ docker compose down -v     # stop containers and wipe the Postgres volume
 ├── scripts/
 │   ├── seed_data.py             # sample data + simulated traffic
 │   └── kafka_load_test.py       # measures real ingestion throughput
+├── jobs/
+│   └── product-popularity/      # MapReduce mapper/reducer + driver script
 └── services/
     ├── product-service/
     ├── user-service/
@@ -221,7 +269,9 @@ Current status:
 - [x] HDFS for raw event storage (batch layer input), fed by a
       Kafka-to-HDFS sink — verified zero data loss and restart-safe
       (committed offsets, no duplicate writes) on a native-arm64 build
-- [ ] MapReduce batch job for product popularity rankings
+- [x] MapReduce batch job for product popularity rankings (Hadoop
+      Streaming, LocalJobRunner) — verified against two independent
+      computations of the same ranking, identical results
 - [ ] Spark Structured Streaming for session reconstruction and
       Z-score demand anomaly detection (speed layer)
 - [ ] Spark MLlib ALS collaborative filtering, trained on the
