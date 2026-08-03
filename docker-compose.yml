@@ -144,11 +144,40 @@ services:
 
   spark-worker:
     image: apache/spark:3.5.2-python3
-    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
+    # numpy isn't bundled in this image, but pyspark.ml (used by the ALS
+    # training job) requires it -- and since Standalone-mode executors run
+    # as child processes of this container's Worker JVM (not inside the
+    # driver's own container), numpy has to be installed *here*, not just
+    # wherever spark-submit runs. Installed to /tmp (not the nonexistent
+    # home directory) and put on PYTHONPATH so spawned executor processes,
+    # which inherit their parent's environment, can import it too.
+    command:
+      - /bin/bash
+      - -c
+      - >
+        pip3 install --target=/tmp/pylibs numpy &&
+        exec /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
     environment:
-      SPARK_WORKER_CORES: "2"
-      SPARK_WORKER_MEMORY: 1g
-    mem_limit: 1280m
+      # 4, not 2: Spark Standalone gives an application ALL available
+      # worker cores by default unless it caps itself with
+      # spark.cores.max. The always-on spark-streaming job grabbed both
+      # cores on a 2-core worker and never released them, permanently
+      # starving any batch job (als-training, and eventually the
+      # MapReduce-adjacent jobs) submitted afterward -- discovered when
+      # als-training sat in Spark's WAITING state indefinitely. Now
+      # spark-streaming is explicitly capped (see below) so batch jobs
+      # always have cores left to run on.
+      SPARK_WORKER_CORES: "4"
+      # 5g: streaming permanently holds 1g, and ALS training's executor
+      # alone requests 2.5g -- 3g total left only ~2g free once streaming
+      # is running, not enough for a 2.5g executor to launch at all
+      # (Spark Standalone needs both cores AND memory free simultaneously;
+      # discovered when als-training sat WAITING despite 2 free cores).
+      # 5g leaves comfortable headroom for both to run concurrently,
+      # still well inside this stack's 12GB budget.
+      SPARK_WORKER_MEMORY: 5g
+      PYTHONPATH: /tmp/pylibs
+    mem_limit: 5500m
     depends_on:
       spark-master:
         condition: service_healthy
@@ -185,6 +214,7 @@ services:
         --master spark://spark-master:7077
         --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.2
         --conf spark.jars.ivy=/tmp/.ivy2
+        --conf spark.cores.max=2
         /job/session_and_anomaly.py
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
@@ -200,6 +230,38 @@ services:
       spark-worker:
         condition: service_healthy
       kafka:
+        condition: service_healthy
+      hdfs-datanode:
+        condition: service_healthy
+
+  # Batch job (train-once, not a daemon) -- kept out of `docker compose up`
+  # behind the "jobs" profile, same as mapreduce-product-popularity.
+  # Trains ALS on the RetailRocket dataset already loaded into HDFS.
+  als-training:
+    image: apache/spark:3.5.2-python3
+    profiles: ["jobs"]
+    # No Kafka involved here (reads straight from HDFS), so no --packages
+    # / Ivy cache needed -- just numpy for the driver side of pyspark.ml,
+    # same reasoning and same /tmp workaround as spark-worker above.
+    command:
+      - /bin/bash
+      - -c
+      - >
+        pip3 install --target=/tmp/pylibs numpy &&
+        exec /opt/spark/bin/spark-submit
+        --master spark://spark-master:7077
+        --driver-memory 1g
+        --executor-memory 2500m
+        --conf spark.executorEnv.PYTHONPATH=/tmp/pylibs
+        --conf spark.cores.max=2
+        /job/train_als.py
+    environment:
+      HDFS_URI: hdfs://hdfs-namenode:9000
+      PYTHONPATH: /tmp/pylibs
+    volumes:
+      - ./jobs/als-training:/job
+    depends_on:
+      spark-worker:
         condition: service_healthy
       hdfs-datanode:
         condition: service_healthy

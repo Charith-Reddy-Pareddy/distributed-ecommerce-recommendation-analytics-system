@@ -184,6 +184,50 @@ Uses the official `apache/spark` image, which — unlike the Hadoop
 images — does publish native arm64 builds, so no custom image was
 needed here.
 
+## ALS recommendation model (Spark MLlib)
+
+`jobs/als-training/train_als.py` trains a real collaborative-filtering
+model — **ALS (Alternating Least Squares)** in Spark MLlib, with
+`implicitPrefs=True` since clickstream events (view/add-to-cart/
+purchase) are implicit feedback, not explicit ratings — on the
+[RetailRocket e-commerce dataset](https://www.kaggle.com/datasets/retailrocket/ecommerce-dataset)
+(real, public, ~2.75M events collected over 4.5 months; not a synthetic
+or self-generated dataset). Event weights match the scheme used
+throughout this project (view=1, add_to_cart=3, transaction=5).
+
+**The honest result, not a curated one:** on a held-out 20% test split,
+evaluated against 31,285 users with enough interaction history for a
+meaningful train/test signal (≥5 interactions — RetailRocket is
+extremely sparse, median interactions-per-user is 1 across ~1.4M users
+and ~235K items, verified directly from the raw data), the model
+achieves:
+
+```
+Precision@10 = 0.0055
+```
+
+That is a real, reproducible number (same result across two full
+training runs with `seed=42`), and it is **far below the >0.15 often
+cited in portfolio write-ups of similar stacks** — including an
+earlier draft of this project's own resume bullet, before it was
+corrected to match what the model actually does. For context: random
+recommendation against a 235K-item catalog would score roughly 0.0000425,
+so the model is meaningfully better than chance (~68x), but "meaningfully
+better than random" and "good" are different claims, and only the
+former is true here. Extreme data sparsity is the dominant cause, not
+an implementation bug — verified by directly computing the dataset's
+interaction distribution rather than assuming it. A production system
+would likely need richer features (item metadata, session context),
+more training data per user, or a hybrid approach (e.g. blending in the
+content-based signals available in `item_properties.csv`, not currently
+used) to do meaningfully better on a catalog this large and this sparse.
+
+The trained model and a precomputed top-10-recommendations table for
+the ~39,600 users with enough history to recommend for (not the full
+~1.4M-user base — see the note in the script) are both persisted to
+HDFS, at `/models/als-recommender` and `/output/als-recommendations`
+respectively.
+
 ## Running locally
 
 Requires Docker and Docker Compose, with **at least 12GB** allocated
@@ -233,6 +277,24 @@ archive (Hadoop Streaming, Python mapper/reducer — see
 docker compose --profile jobs run --rm mapreduce-product-popularity
 ```
 
+To train the **ALS recommendation model**: download the RetailRocket
+dataset from [Kaggle](https://www.kaggle.com/datasets/retailrocket/ecommerce-dataset)
+(requires a free account — there's no unauthenticated mirror), unzip
+it into `data/retailrocket/` (gitignored — the dataset isn't checked
+into this repo), then load it into HDFS and run the job:
+
+```bash
+docker cp data/retailrocket/events.csv <namenode-container>:/tmp/events.csv
+docker compose exec hdfs-namenode sh -c \
+  "hdfs dfs -mkdir -p /datasets/retailrocket && hdfs dfs -put -f /tmp/events.csv /datasets/retailrocket/events.csv"
+docker compose --profile jobs up -d als-training
+docker compose logs -f als-training
+```
+
+See [ALS recommendation model](#als-recommendation-model-spark-mllib)
+below for the real (not curated) Precision@10 result and why it looks
+the way it does.
+
 Then try the API:
 
 ```bash
@@ -274,7 +336,9 @@ docker compose down -v     # stop containers and wipe the Postgres volume
 │   └── kafka_load_test.py       # measures real ingestion throughput
 ├── jobs/
 │   ├── product-popularity/      # MapReduce mapper/reducer + driver script
-│   └── spark-streaming/         # Structured Streaming: sessions + anomalies
+│   ├── spark-streaming/         # Structured Streaming: sessions + anomalies
+│   └── als-training/            # Spark MLlib ALS training + evaluation
+├── data/retailrocket/           # gitignored -- download separately, see below
 └── services/
     ├── product-service/
     ├── user-service/
@@ -318,8 +382,13 @@ Current status:
       real baseline-then-spike traffic test (z_score=32.17 correctly
       flagged) and a real session that produced the exact expected
       HDFS output
-- [ ] Spark MLlib ALS collaborative filtering, trained on the
-      RetailRocket e-commerce dataset, with a measured Precision@10
+- [x] Spark MLlib ALS collaborative filtering, trained on the real
+      RetailRocket e-commerce dataset (2.75M events, downloaded from
+      Kaggle, verified against published dataset stats) — measured
+      Precision@10 = 0.0055, reported honestly rather than a curated
+      or aspirational number (see
+      [ALS recommendation model](#als-recommendation-model-spark-mllib)
+      for why it's this low and what it would take to improve it)
 - [ ] HBase for low-latency user-item lookups
 - [ ] Cassandra for time-series demand analytics
 - [ ] MongoDB for enriched product data
