@@ -46,7 +46,7 @@ consumers each build their own independent read model from it.
 
 | Service | Port | Responsibility | Datastore |
 |---|---|---|---|
-| `product-service` | 8001 | Product catalog CRUD | `product_db` (Postgres) |
+| `product-service` | 8001 | Product catalog CRUD, enriched documents (tags, specs, images, geo location, rating) | MongoDB |
 | `user-service` | 8002 | User CRUD | `user_db` (Postgres) |
 | `event-service` | 8003 | Ingests view/cart/purchase events, publishes them to Kafka | Kafka only (no DB) |
 | `recommendation-service` | 8004 | Consumes the `events` topic, builds an item-item similarity model in memory, serves recommendations | Kafka (event source only, stateless otherwise) |
@@ -304,6 +304,32 @@ matched Cassandra's row count exactly, then queried a specific product
 through both `cqlsh` directly and the live HTTP endpoint and got
 identical data both times.
 
+## Product catalog: MongoDB
+
+`product-service` was migrated off Postgres onto MongoDB — a genuine
+migration, not MongoDB bolted on alongside the old store. Product
+documents are actually enriched (the "enriched product information"
+this is meant to demonstrate), with nested, variable-shape data that's
+awkward in a flat SQL row but natural in a document store: `tags`,
+`specifications` (brand/color/weight as a nested object), `images`,
+a GeoJSON `location` (real warehouse-city coordinates — the same field
+shape Elasticsearch's geo-filtered search will read later, added once,
+not re-seeded), and `rating`.
+
+MongoDB has no native auto-increment, so product ids (still plain
+integers, not ObjectIds — every other service in this project keys on
+integer product ids: Kafka events, HBase rows, Cassandra partitions,
+so switching `product-service` alone to ObjectId strings would ripple
+pointlessly across the rest of the system for no real benefit here)
+come from an atomic `$inc` against a dedicated counters document, the
+standard MongoDB pattern for this.
+
+**Verified, not assumed:** created a product through the API, queried
+it back three ways — the API response, a direct `mongosh` query
+against the container, and through `recommendation-service`'s existing
+product-enrichment call — and got byte-identical enriched data all
+three times.
+
 ## Running locally
 
 Requires Docker and Docker Compose, with **at least 12GB** allocated
@@ -314,10 +340,10 @@ big-data infrastructure needs real headroom.
 docker compose up --build
 ```
 
-This starts Postgres, Kafka, HDFS (namenode + datanode), ZooKeeper,
-HBase (master + regionserver + REST server), Cassandra, a Spark
-standalone cluster (master + worker + the streaming job), and all six
-FastAPI/worker services. Wait for the logs to settle, then seed some
+This starts Postgres, MongoDB, Kafka, HDFS (namenode + datanode),
+ZooKeeper, HBase (master + regionserver + REST server), Cassandra, a
+Spark standalone cluster (master + worker + the streaming job), and
+all six FastAPI/worker services. Wait for the logs to settle, then seed some
 sample data:
 
 ```bash
@@ -486,7 +512,12 @@ Current status:
       Z-score anomaly detection, reused rather than recomputed;
       verified row-count-exact against Spark's own batch log and
       cross-checked via `cqlsh` and the live HTTP endpoint
-- [ ] MongoDB for enriched product data
+- [x] MongoDB for enriched product data — a genuine migration off
+      Postgres (not bolted on alongside it), with real nested/
+      variable-shape enrichment (tags, specs, images, geo location,
+      rating); verified byte-identical data across the API, a direct
+      `mongosh` query, and `recommendation-service`'s existing
+      enrichment call
 - [ ] Elasticsearch for full-text and geo-filtered product search
 - [ ] A Flask dashboard tying search, live demand, and recommendations
       into one view

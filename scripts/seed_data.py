@@ -18,12 +18,32 @@ EVENT_SERVICE = "http://localhost:8003"
 
 CATEGORIES = ["electronics", "books", "home", "sportswear", "toys"]
 
+# Warehouse/seller locations (real city coordinates, [lon, lat]) -- lets
+# the geo-filtered search added later actually have something real to
+# filter on, rather than random/meaningless points.
+WAREHOUSES = {
+    "New York": (-74.006, 40.7128),
+    "Los Angeles": (-118.2437, 34.0522),
+    "Chicago": (-87.6298, 41.8781),
+    "Austin": (-97.7431, 30.2672),
+    "Seattle": (-122.3321, 47.6062),
+}
+
 SAMPLE_PRODUCTS = [
     {
         "name": f"{category.title()} Item {i}",
         "category": category,
         "price": round(random.uniform(9.99, 299.99), 2),
         "description": f"A great {category} product",
+        "tags": [category, random.choice(["featured", "bestseller", "new", "clearance"])],
+        "specifications": {
+            "brand": f"Brand{random.randint(1, 20)}",
+            "color": random.choice(["black", "white", "red", "blue", "green"]),
+            "weight_kg": str(round(random.uniform(0.1, 15.0), 2)),
+        },
+        "images": [f"https://picsum.photos/seed/{category}{i}/400"],
+        "location": {"type": "Point", "coordinates": list(random.choice(list(WAREHOUSES.values())))},
+        "rating": {"average": round(random.uniform(3.0, 5.0), 1), "count": random.randint(0, 500)},
     }
     for category in CATEGORIES
     for i in range(1, 5)

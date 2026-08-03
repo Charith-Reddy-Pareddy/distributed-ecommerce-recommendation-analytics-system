@@ -15,6 +15,23 @@ services:
       timeout: 5s
       retries: 10
 
+  # product-service's store -- richer, variable-shape product documents
+  # (nested specifications, images, geo location) fit MongoDB's document
+  # model more naturally than a flat SQL row.
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongodata:/data/db
+    ports:
+      - "27017:27017"
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 20s
+
   # Kafka in KRaft mode -- no separate Zookeeper container. Zookeeper is being
   # phased out of Kafka itself (KRaft has been the recommended mode since
   # Kafka 3.3+); skipping it also saves real memory in our resource budget.
@@ -401,11 +418,11 @@ services:
   product-service:
     build: ./services/product-service
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/product_db
+      MONGODB_URL: mongodb://mongo:27017
     ports:
       - "8001:8000"
     depends_on:
-      postgres:
+      mongo:
         condition: service_healthy
 
   user-service:
@@ -464,6 +481,7 @@ services:
 
 volumes:
   pgdata:
+  mongodata:
   kafkadata:
   hdfs-namenode-data:
   hdfs-datanode-data:

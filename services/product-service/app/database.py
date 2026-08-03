@@ -1,20 +1,25 @@
 import os
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from motor.motor_asyncio import AsyncIOMotorClient
+from pymongo import ReturnDocument
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/product_db"
-)
+MONGODB_URL = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+client = AsyncIOMotorClient(MONGODB_URL)
+db = client["product_catalog"]
+products_collection = db["products"]
+counters_collection = db["counters"]
 
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+async def next_product_id() -> int:
+    """MongoDB has no native auto-increment -- the standard workaround
+    is an atomic $inc against a dedicated counters document, which is
+    what this does.
+    """
+    result = await counters_collection.find_one_and_update(
+        {"_id": "product_id"},
+        {"$inc": {"seq": 1}},
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+    return result["seq"]

@@ -1,5 +1,6 @@
 -- Each microservice owns its own database (database-per-service pattern).
 -- event-service has no database of its own: Kafka is its durable log.
-CREATE DATABASE product_db;
+-- product-service has no database of its own either: it uses MongoDB
+-- (see the mongo service in docker-compose.yml), not Postgres.
 CREATE DATABASE user_db;
 CREATE DATABASE analytics_db;
