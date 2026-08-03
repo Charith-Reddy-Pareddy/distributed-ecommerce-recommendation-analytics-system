@@ -15,7 +15,7 @@ class EventCreate(BaseModel):
 class EventOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
-    id: int
+    id: str
     user_id: int
     product_id: int
     event_type: str
