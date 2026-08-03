@@ -4,6 +4,7 @@ from fastapi import Depends, FastAPI
 from sqlalchemy.orm import Session
 
 from . import models
+from .cassandra_client import get_demand_timeseries
 from .consumer import start_consumer
 from .database import engine, get_db
 
@@ -60,3 +61,15 @@ def summary(db: Session = Depends(get_db)):
         {"day": r.day.isoformat(), "event_type": r.event_type, "count": r.count}
         for r in rows
     ]
+
+
+# Time-series demand data (Cassandra), distinct from the Postgres-backed
+# endpoints above -- per-minute granularity, written live by the Spark
+# Structured Streaming job.
+@app.get("/analytics/demand-timeseries/{product_id}")
+def demand_timeseries(product_id: int, days: int = 1):
+    return {
+        "product_id": product_id,
+        "days": days,
+        "points": get_demand_timeseries(product_id, days=days),
+    }

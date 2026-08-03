@@ -6,13 +6,16 @@ against it --
    using Spark's session_window (a gap-based window -- a new session
    starts after 5 minutes of inactivity), writing finalized sessions
    to HDFS as they close.
-2. Per-product demand anomaly detection: counts events per product in
-   1-minute tumbling windows, maintains a running mean/variance per
-   product (Welford's online algorithm, since we can't hold the whole
-   history in memory), and flags a window as anomalous when its count
-   is more than 2.5 standard deviations from that product's running
-   mean -- classic Z-score outlier detection, computed incrementally
-   over an unbounded stream rather than a fixed batch.
+2. Per-product demand: counts events per product in 1-minute tumbling
+   windows, which feeds two things from the same computation --
+   (a) Z-score anomaly detection: a running mean/variance per product
+       (Welford's online algorithm, since we can't hold the whole
+       history in memory), flagging a window when its count is more
+       than 2.5 standard deviations from that product's running mean;
+   (b) every window's count is also written to Cassandra as a
+       queryable time-series (see cassandra_writer.py) -- one
+       computation, two consumers, rather than computing the same
+       aggregate twice.
 
 Both queries read from the same Kafka source but maintain independent
 offsets and state; that's normal for Structured Streaming.
@@ -22,6 +25,8 @@ import os
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import col, collect_list, count, from_json, session_window, to_timestamp, window
 from pyspark.sql.types import IntegerType, StringType, StructField, StructType
+
+from cassandra_writer import write_demand_count
 
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 HDFS_URI = os.getenv("HDFS_URI", "hdfs://hdfs-namenode:9000")
@@ -106,7 +111,10 @@ def run_anomaly_detection(events):
         for row in rows:
             product_id = row["product_id"]
             event_count = row["event_count"]
+            window_start = row["window"]["start"]
             window_end = row["window"]["end"]
+
+            write_demand_count(product_id, window_start, event_count)
 
             n, mean, m2 = running_stats.get(product_id, (0, 0.0, 0.0))
 

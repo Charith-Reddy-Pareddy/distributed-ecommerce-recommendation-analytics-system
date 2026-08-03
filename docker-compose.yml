@@ -220,6 +220,29 @@ services:
       hbase-rest:
         condition: service_healthy
 
+  # Time-series demand store. The Spark Structured Streaming job (below)
+  # writes the same per-product, per-minute window counts it already
+  # computes for Z-score anomaly detection into here too -- one
+  # computation, two consumers. Cassandra's partition-per-day design
+  # (see the schema the job creates) is the standard pattern for
+  # high-write-throughput time-series data, as opposed to Postgres'
+  # row-per-event style used elsewhere in this project.
+  cassandra:
+    image: cassandra:5.0
+    environment:
+      MAX_HEAP_SIZE: 512M
+      HEAP_NEWSIZE: 128M
+      CASSANDRA_CLUSTER_NAME: ecommerce-cluster
+    ports:
+      - "9042:9042"
+    mem_limit: 1024m
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'describe cluster' > /dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
   # Spark standalone cluster (the speed layer's compute engine) -- the
   # official apache/spark image supports native arm64, unlike the Hadoop
   # images, so no custom build needed here.
@@ -301,7 +324,10 @@ services:
     # runs as. Trade-off: the ~20MB Kafka connector jars re-download on
     # every container restart rather than being cached -- fine for a demo.
     # Ivy also doesn't reliably create its own cache/jars subdirectories,
-    # so they're created explicitly first. Command (not entrypoint) is
+    # so they're created explicitly first. Also installs cassandra-driver
+    # to the same ephemeral /tmp location as numpy elsewhere in this
+    # project (this image's "spark" user has no home directory, so pip's
+    # default install target isn't writable). Command (not entrypoint) is
     # overridden so the image's own /opt/entrypoint.sh still runs first
     # (JAVA_HOME/classpath setup) and passes this through via its
     # pass-through case.
@@ -310,15 +336,19 @@ services:
       - -c
       - >
         mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars &&
-        exec /opt/spark/bin/spark-submit
+        pip3 install --target=/tmp/pylibs cassandra-driver &&
+        PYTHONPATH=/tmp/pylibs:/job exec /opt/spark/bin/spark-submit
         --master spark://spark-master:7077
         --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.2
         --conf spark.jars.ivy=/tmp/.ivy2
         --conf spark.cores.max=2
+        --conf spark.executorEnv.PYTHONPATH=/tmp/pylibs
+        --py-files /job/cassandra_writer.py
         /job/session_and_anomaly.py
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       HDFS_URI: hdfs://hdfs-namenode:9000
+      CASSANDRA_HOST: cassandra
       # SESSION_GAP/SESSION_WATERMARK intentionally omitted here -- the
       # job's own defaults (5 minutes / 10 minutes, realistic session
       # semantics) apply. Override with shorter values only for fast
@@ -332,6 +362,8 @@ services:
       kafka:
         condition: service_healthy
       hdfs-datanode:
+        condition: service_healthy
+      cassandra:
         condition: service_healthy
 
   # Batch job (train-once, not a daemon) -- kept out of `docker compose up`
@@ -417,6 +449,7 @@ services:
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/analytics_db
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      CASSANDRA_HOST: cassandra
     ports:
       - "8005:8000"
     depends_on:
@@ -426,6 +459,8 @@ services:
         condition: service_healthy
       event-service:
         condition: service_started
+      cassandra:
+        condition: service_healthy
 
 volumes:
   pgdata:

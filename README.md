@@ -272,6 +272,38 @@ external catalog wired into every service — so `/recommendations/precomputed/{
 does not (and cannot) enrich its results via `product-service` the way
 the other recommendation endpoints do.
 
+## Time-series analytics: Cassandra
+
+The Spark Structured Streaming job already computes per-product,
+per-minute event-count windows for Z-score anomaly detection (see
+[Speed layer](#speed-layer-spark-structured-streaming) above) — that
+same computation is reused, not duplicated, to also populate a
+Cassandra time-series table: one aggregate, two consumers.
+
+`product_demand_by_minute` partitions by `(product_id, bucket_date)` —
+a day's worth of per-minute counts for one product lives in a single
+partition, the standard Cassandra time-series pattern that bounds
+partition size by bucketing on time, rather than letting a partition
+grow unboundedly the way a naive `PRIMARY KEY (product_id)` table
+would. Each window write is a plain upsert of that window's *current*
+total (not a counter increment) — Spark's `update` output mode re-emits
+a window's running total on every micro-batch until it closes, so
+incrementing on each write would double-count; overwriting with the
+current total is both simpler and correct.
+
+`analytics-service` exposes it live, distinct from its existing
+Postgres-backed endpoints:
+
+```bash
+curl http://localhost:8005/analytics/demand-timeseries/4269
+```
+
+**Verified, not assumed:** pushed live traffic through Kafka, confirmed
+the exact row count Spark's own batch log reported (`window_rows=5292`)
+matched Cassandra's row count exactly, then queried a specific product
+through both `cqlsh` directly and the live HTTP endpoint and got
+identical data both times.
+
 ## Running locally
 
 Requires Docker and Docker Compose, with **at least 12GB** allocated
@@ -283,8 +315,8 @@ docker compose up --build
 ```
 
 This starts Postgres, Kafka, HDFS (namenode + datanode), ZooKeeper,
-HBase (master + regionserver + REST server), a Spark standalone
-cluster (master + worker + the streaming job), and all six
+HBase (master + regionserver + REST server), Cassandra, a Spark
+standalone cluster (master + worker + the streaming job), and all six
 FastAPI/worker services. Wait for the logs to settle, then seed some
 sample data:
 
@@ -390,7 +422,7 @@ docker compose down -v     # stop containers and wipe the Postgres volume
 │   └── kafka_load_test.py       # measures real ingestion throughput
 ├── jobs/
 │   ├── product-popularity/      # MapReduce mapper/reducer + driver script
-│   ├── spark-streaming/         # Structured Streaming: sessions + anomalies
+│   ├── spark-streaming/         # Structured Streaming: sessions + anomalies + Cassandra writer
 │   └── als-training/            # Spark MLlib ALS training + evaluation
 ├── data/retailrocket/           # gitignored -- download separately, see below
 └── services/
@@ -449,7 +481,11 @@ Current status:
       lookup against the HDFS source data, ~10ms measured real-world
       latency, and unplanned proof of durability (survived an
       accidentally-destroyed master container without data loss)
-- [ ] Cassandra for time-series demand analytics
+- [x] Cassandra for time-series demand analytics, partitioned by
+      (product_id, day) — the same window counts already computed for
+      Z-score anomaly detection, reused rather than recomputed;
+      verified row-count-exact against Spark's own batch log and
+      cross-checked via `cqlsh` and the live HTTP endpoint
 - [ ] MongoDB for enriched product data
 - [ ] Elasticsearch for full-text and geo-filtered product search
 - [ ] A Flask dashboard tying search, live demand, and recommendations
