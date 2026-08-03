@@ -39,13 +39,28 @@ async def create_product(product: schemas.ProductCreate):
 async def search(
     q: str | None = None,
     category: str | None = None,
+    brand: str | None = None,
+    price_min: float | None = None,
+    price_max: float | None = None,
+    rating_min: float | None = None,
     lat: float | None = None,
     lon: float | None = None,
     radius_km: float | None = None,
+    sort: str | None = None,
     limit: int = 20,
 ):
     results = await search_products(
-        query=q, category=category, lat=lat, lon=lon, radius_km=radius_km, limit=limit
+        query=q,
+        category=category,
+        brand=brand,
+        price_min=price_min,
+        price_max=price_max,
+        rating_min=rating_min,
+        lat=lat,
+        lon=lon,
+        radius_km=radius_km,
+        sort=sort,
+        limit=limit,
     )
     return {"query": q, "category": category, "results": results}
 

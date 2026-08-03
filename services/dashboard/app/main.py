@@ -57,6 +57,40 @@ def demand(product_id: int):
         return jsonify({"error": str(e)}), 502
 
 
+@app.post("/api/products/batch")
+def products_batch():
+    product_ids = request.get_json(silent=True) or []
+    try:
+        resp = requests.post(f"{PRODUCT_SERVICE_URL}/products/batch", json=product_ids, timeout=5)
+        resp.raise_for_status()
+        return jsonify(resp.json())
+    except requests.RequestException as e:
+        return jsonify({"error": str(e)}), 502
+
+
+@app.get("/api/top-products")
+def top_products():
+    limit = request.args.get("limit", "10")
+    try:
+        resp = requests.get(
+            f"{ANALYTICS_SERVICE_URL}/analytics/top-products", params={"limit": limit}, timeout=5
+        )
+        resp.raise_for_status()
+        return jsonify(resp.json())
+    except requests.RequestException as e:
+        return jsonify({"error": str(e)}), 502
+
+
+@app.get("/api/summary")
+def event_summary():
+    try:
+        resp = requests.get(f"{ANALYTICS_SERVICE_URL}/analytics/summary", timeout=5)
+        resp.raise_for_status()
+        return jsonify(resp.json())
+    except requests.RequestException as e:
+        return jsonify({"error": str(e)}), 502
+
+
 @app.get("/api/recommendations/<int:visitor_id>")
 def recommendations(visitor_id: int):
     try:

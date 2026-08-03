@@ -1,14 +1,21 @@
-"""Seed the running services with sample products, users, and simulated
-interaction events so the recommendation and analytics endpoints have
-something to work with.
+"""Seed the running services with real Amazon product data, sample
+users, and simulated interaction events so the recommendation, search,
+and analytics endpoints have something real to work with.
+
+Product data comes from data/amazon_products.json -- 300 real Amazon
+products (real titles, brands, prices, images, ratings, and ASINs)
+extracted from the public McAuley-Lab/Amazon-Reviews-2023 dataset via
+scripts/fetch_amazon_products.py. Not synthetic/placeholder data.
 
 Usage (with all services already up via `docker compose up`):
 
     pip install requests
     python scripts/seed_data.py
 """
+import json
 import random
 import time
+from pathlib import Path
 
 import requests
 
@@ -16,11 +23,12 @@ PRODUCT_SERVICE = "http://localhost:8001"
 USER_SERVICE = "http://localhost:8002"
 EVENT_SERVICE = "http://localhost:8003"
 
-CATEGORIES = ["electronics", "books", "home", "sportswear", "toys"]
+AMAZON_PRODUCTS_PATH = Path(__file__).resolve().parent.parent / "data" / "amazon_products.json"
 
 # Warehouse/seller locations (real city coordinates, [lon, lat]) -- lets
-# the geo-filtered search added later actually have something real to
-# filter on, rather than random/meaningless points.
+# the geo-filtered search have something real to filter on. The Amazon
+# dataset itself has no warehouse/seller geo data, so each product gets
+# assigned one of these on seed.
 WAREHOUSES = {
     "New York": (-74.006, 40.7128),
     "Los Angeles": (-118.2437, 34.0522),
@@ -29,25 +37,30 @@ WAREHOUSES = {
     "Seattle": (-122.3321, 47.6062),
 }
 
-SAMPLE_PRODUCTS = [
-    {
-        "name": f"{category.title()} Item {i}",
-        "category": category,
-        "price": round(random.uniform(9.99, 299.99), 2),
-        "description": f"A great {category} product",
-        "tags": [category, random.choice(["featured", "bestseller", "new", "clearance"])],
-        "specifications": {
-            "brand": f"Brand{random.randint(1, 20)}",
-            "color": random.choice(["black", "white", "red", "blue", "green"]),
-            "weight_kg": str(round(random.uniform(0.1, 15.0), 2)),
-        },
-        "images": [f"https://picsum.photos/seed/{category}{i}/400"],
-        "location": {"type": "Point", "coordinates": list(random.choice(list(WAREHOUSES.values())))},
-        "rating": {"average": round(random.uniform(3.0, 5.0), 1), "count": random.randint(0, 500)},
-    }
-    for category in CATEGORIES
-    for i in range(1, 5)
-]
+
+def load_amazon_products() -> list[dict]:
+    raw = json.loads(AMAZON_PRODUCTS_PATH.read_text())
+    products = []
+    for item in raw:
+        products.append(
+            {
+                "name": item["name"],
+                "category": item["category"],
+                "price": item["price"],
+                "description": item["description"],
+                "tags": [item["category"], item["brand"]],
+                "specifications": {"brand": item["brand"]},
+                "images": [item["image"]],
+                "location": {
+                    "type": "Point",
+                    "coordinates": list(random.choice(list(WAREHOUSES.values()))),
+                },
+                "rating": {"average": item["average_rating"], "count": item["rating_number"]},
+                "asin": item["asin"],
+            }
+        )
+    return products
+
 
 SAMPLE_USERS = [
     {
@@ -61,7 +74,7 @@ SAMPLE_USERS = [
 
 def seed_products() -> list[int]:
     ids = []
-    for product in SAMPLE_PRODUCTS:
+    for product in load_amazon_products():
         resp = requests.post(f"{PRODUCT_SERVICE}/products", json=product)
         resp.raise_for_status()
         ids.append(resp.json()["id"])
@@ -91,7 +104,7 @@ def simulate_events(user_ids: list[int], product_ids: list[int], count: int = 30
 
 
 if __name__ == "__main__":
-    print("Seeding products...")
+    print("Seeding real Amazon product data...")
     product_ids = seed_products()
     print(f"Created {len(product_ids)} products")
 
@@ -105,3 +118,4 @@ if __name__ == "__main__":
     print("\nDone! Try:")
     print(f"  curl http://localhost:8004/recommendations/{user_ids[0]}")
     print("  curl http://localhost:8005/analytics/top-products")
+    print(f'  curl "http://localhost:8001/products/search?q=headphones"')

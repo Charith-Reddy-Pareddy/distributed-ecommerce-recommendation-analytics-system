@@ -86,6 +86,15 @@ input {
 input[type="text"] { flex: 1; min-width: 140px; }
 input[type="number"] { width: 110px; }
 
+select {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 0.5rem 0.7rem;
+  font-size: 0.9rem;
+}
+
 button {
   background: var(--accent);
   color: white;
@@ -122,6 +131,38 @@ button:hover { opacity: 0.9; }
 .result-item .meta {
   color: var(--muted);
   font-size: 0.8rem;
+}
+
+.product-item {
+  align-items: center;
+}
+
+.product-thumb {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  background: white;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.product-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.product-side {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.product-side a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.product-side a:hover {
+  text-decoration: underline;
 }
 
 .empty {

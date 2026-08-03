@@ -18,9 +18,20 @@
   <main>
     <section class="card">
       <h2>Product Search <span class="badge">Elasticsearch</span></h2>
+      <p class="subtitle">300 real Amazon products (titles, brands, prices, ratings, images, ASINs) sourced from the public McAuley-Lab/Amazon-Reviews-2023 dataset.</p>
       <form id="search-form">
         <input type="text" id="search-q" placeholder="Search name / description / tags...">
         <input type="text" id="search-category" placeholder="Category (optional)">
+        <input type="text" id="search-brand" placeholder="Brand (optional)">
+        <input type="number" id="search-price-min" placeholder="Min price" step="any">
+        <input type="number" id="search-price-max" placeholder="Max price" step="any">
+        <input type="number" id="search-rating-min" placeholder="Min rating" step="any" min="0" max="5">
+        <select id="search-sort">
+          <option value="">Sort: relevance</option>
+          <option value="price_asc">Price: low to high</option>
+          <option value="price_desc">Price: high to low</option>
+          <option value="rating_desc">Rating: high to low</option>
+        </select>
         <button type="submit">Search</button>
       </form>
       <div class="geo-row">
@@ -30,6 +41,18 @@
         <button type="button" id="geo-search-btn">Geo search</button>
       </div>
       <div id="search-results" class="results"></div>
+    </section>
+
+    <section class="card">
+      <h2>Top Products <span class="badge">Postgres / SQL</span></h2>
+      <p class="subtitle">Views, cart-adds, and purchases per product, aggregated live from analytics-service's SQL tables.</p>
+      <canvas id="top-products-chart" height="140"></canvas>
+    </section>
+
+    <section class="card">
+      <h2>Event Volume by Day <span class="badge">Postgres / SQL</span></h2>
+      <p class="subtitle">Daily event counts by type, computed with a SQL GROUP BY over the same events feeding recommendations and demand tracking.</p>
+      <canvas id="event-summary-chart" height="140"></canvas>
     </section>
 
     <section class="card">

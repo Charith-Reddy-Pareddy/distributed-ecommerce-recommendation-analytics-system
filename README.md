@@ -316,6 +316,16 @@ a GeoJSON `location` (real warehouse-city coordinates — the same field
 shape Elasticsearch's geo-filtered search will read later, added once,
 not re-seeded), and `rating`.
 
+The catalog itself is **300 real Amazon products** — real titles,
+brands, prices, descriptions, images, ratings, and Amazon Standard
+Identification Numbers (ASINs) — pulled from the public
+[McAuley-Lab/Amazon-Reviews-2023](https://amazon-reviews-2023.github.io/)
+dataset (Electronics, Toys & Games, Musical Instruments, and Cell
+Phones & Accessories categories) via `scripts/fetch_amazon_products.py`.
+Not synthetic/placeholder data — see [`data/amazon_products.json`](data/amazon_products.json)
+for the extracted records, and [Product search](#product-search-elasticsearch)
+below for how the ASIN gets used to link back to the real Amazon listing.
+
 MongoDB has no native auto-increment, so product ids (still plain
 integers, not ObjectIds — every other service in this project keys on
 integer product ids: Kafka events, HBase rows, Cassandra partitions,
@@ -333,17 +343,18 @@ three times.
 ## Product search: Elasticsearch
 
 `product-service` indexes every product into Elasticsearch — full-text
-across name/description/tags, plus a `geo_point` built from the same
-warehouse `location` MongoDB already stores (see
-[Product catalog](#product-catalog-mongodb) above), so nothing extra
-had to be seeded for this to work.
+across name/description/tags, structured filters (`category`, `brand`,
+`price_min`/`price_max`, `rating_min`), sort options (price, rating),
+and a `geo_point` built from the same warehouse `location` MongoDB
+already stores (see [Product catalog](#product-catalog-mongodb)
+above), so nothing extra had to be seeded for this to work.
 
 ```bash
 # Full-text
 curl "http://localhost:8001/products/search?q=noise+cancelling"
 
-# Category filter
-curl "http://localhost:8001/products/search?category=electronics"
+# Structured filters: category, brand, price range, minimum rating, sort
+curl "http://localhost:8001/products/search?category=electronics&brand=Anker&price_max=50&rating_min=4&sort=rating_desc"
 
 # Geo-filtered: within 10km of a point
 curl "http://localhost:8001/products/search?lat=30.2672&lon=-97.7431&radius_km=10"
@@ -356,25 +367,46 @@ MongoDB (the actual source of truth), and every new product is also
 indexed immediately on creation.
 
 **Verified, not assumed — including that the geo-filter actually
-filters, not just accepts the parameters:** looked up which 6 of the
-20 seeded products share the Austin warehouse coordinates, ran a
+filters, not just accepts the parameters:** looked up which 61 of the
+300 real products share the Austin warehouse coordinates, ran a
 10km-radius geo search centered on Austin, and got back exactly those
-6 product ids and no others. Also created a new product through the
+61 product ids and no others. Also created a new product through the
 API and confirmed it was full-text searchable within about a second
 (Elasticsearch's near-real-time refresh), without waiting for the
 startup backfill.
 
+This also caught a real bug worth noting: deleting the Elasticsearch
+index out-of-band (`curl -X DELETE .../products`) and then indexing
+through the running `product-service` process — instead of restarting
+it — let Elasticsearch auto-create the index with a *dynamic* mapping
+guessed from the first document, which mapped `location` as a plain
+`{lat, lon}` object instead of `geo_point`, silently breaking
+geo-filtering with a 400 on every geo search. The explicit mapping in
+`search_client.py` only gets applied by `ensure_index()`, which only
+runs at process startup — so the fix is restarting the service (or
+never deleting the index without also restarting), not just
+re-indexing data into whatever mapping happens to exist.
+
 ## Dashboard: Flask
 
-A single web page (`http://localhost:8006`) ties together the three
+A single web page (`http://localhost:8006`) ties together the
 serving-layer pieces above — it's a thin server-side proxy, deliberately:
 the browser only ever talks to Flask, never directly to
 product-service/analytics-service/recommendation-service, so there's no
 CORS setup and backend URLs stay server-side config, not exposed to the
 client.
 
-- **Product Search** — full-text and geo-filtered, hits Elasticsearch
-  through `product-service`.
+- **Product Search** — full-text, structured filters (category, brand,
+  price range, minimum rating), sort, and geo-filtering, all hitting
+  Elasticsearch through `product-service`. Each result card shows the
+  real product photo, brand, price, and rating, plus a **View on
+  Amazon** link built from the product's real ASIN
+  (`amazon.com/dp/<asin>`) — see [Product catalog](#product-catalog-mongodb).
+- **Top Products** and **Event Volume by Day** — Chart.js panels
+  fed by `analytics-service`'s SQL (Postgres) aggregates:
+  `GET /analytics/top-products` (views/cart-adds/purchases per
+  product, with names resolved via a batch product lookup) and
+  `GET /analytics/summary` (daily event counts grouped by type).
 - **Live Demand** — a Chart.js line chart for a chosen product id,
   polling every 5 seconds; the data comes from Cassandra, populated by
   the Spark Structured Streaming job in real time.
@@ -383,9 +415,11 @@ client.
 
 **Verified interactively in an actual browser, not just via curl:**
 typed a search query and confirmed the UI filtered to the one matching
-product; entered Austin's coordinates in the geo search form and got
-back the exact same 6 product ids verified earlier at the API level;
-pushed 15 fresh events for a product through the real ingestion
+product; set a max-price filter and a rating sort and confirmed the
+network request carried the right query params and every result
+respected both; entered Austin's coordinates in the geo search form
+and got back the exact same 61 product ids verified earlier at the API
+level; pushed 15 fresh events for a product through the real ingestion
 pipeline (`event-service` → Kafka → Spark → Cassandra) and watched the
 demand chart update on its own within one polling cycle, with no page
 reload or manual action — genuine end-to-end live behavior, not a
@@ -506,13 +540,16 @@ docker compose down -v     # stop containers and wipe the Postgres volume
 │   ├── hadoop/                  # custom native-arm64 HDFS image
 │   └── hbase/                   # custom native-arm64 HBase image
 ├── scripts/
-│   ├── seed_data.py             # sample data + simulated traffic
+│   ├── fetch_amazon_products.py # pulls 300 real product records from Amazon-Reviews-2023
+│   ├── seed_data.py             # loads data/amazon_products.json + simulated traffic
 │   └── kafka_load_test.py       # measures real ingestion throughput
 ├── jobs/
 │   ├── product-popularity/      # MapReduce mapper/reducer + driver script
 │   ├── spark-streaming/         # Structured Streaming: sessions + anomalies + Cassandra writer
 │   └── als-training/            # Spark MLlib ALS training + evaluation
-├── data/retailrocket/           # gitignored -- download separately, see below
+├── data/
+│   ├── amazon_products.json     # 300 real Amazon products (committed -- small enough to track)
+│   └── retailrocket/            # gitignored -- download separately, see below
 └── services/
     ├── product-service/
     ├── user-service/
@@ -591,6 +628,15 @@ Current status:
       (typed search, geo search, and watched the live demand chart
       auto-update within one polling cycle after pushing real events
       through the actual ingestion pipeline), not just via curl
+- [x] Replaced the synthetic 20-product demo catalog with 300 real
+      Amazon products (real titles, brands, prices, images, ratings,
+      ASINs) from the public Amazon-Reviews-2023 dataset; added brand/
+      price/rating filters and sort to search, real "View on Amazon"
+      links, and two new SQL-backed (Postgres) dashboard charts —
+      verified end-to-end in a real browser, including catching and
+      fixing a real Elasticsearch geo-mapping regression introduced
+      during the reseed (see
+      [Product search](#product-search-elasticsearch))
 
 ## Possible further extensions
 

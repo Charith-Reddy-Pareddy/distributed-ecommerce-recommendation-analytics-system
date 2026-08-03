@@ -30,6 +30,11 @@ class ProductBase(BaseModel):
     images: list[str] = Field(default_factory=list)
     location: GeoPoint | None = None
     rating: Rating = Field(default_factory=Rating)
+    # Real Amazon Standard Identification Number, when the product was
+    # sourced from real Amazon catalog data (see README) -- lets the
+    # dashboard link to an actual Amazon product page instead of a
+    # generic search fallback.
+    asin: str | None = None
 
 
 class ProductCreate(ProductBase):
