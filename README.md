@@ -146,6 +146,44 @@ It's a one-shot batch job, not a long-running service, so it's kept
 out of `docker compose up` behind a Compose profile — see
 [Running locally](#running-locally) for the invocation.
 
+## Speed layer: Spark Structured Streaming
+
+`jobs/spark-streaming/session_and_anomaly.py` runs on a Spark standalone
+cluster (`spark-master` + `spark-worker`) and reads the Kafka `events`
+topic live, running two independent streaming queries:
+
+1. **Session reconstruction** groups each user's events using Spark's
+   `session_window` (a gap-based window — by default a new session
+   starts after 5 minutes of inactivity), and writes finalized sessions
+   to HDFS at `/spark-output/sessions/` once the watermark confirms a
+   session won't receive any more events.
+2. **Per-product demand anomaly detection** counts events per product
+   in 1-minute tumbling windows, maintains a running mean/variance per
+   product using **Welford's online algorithm** (so it doesn't need to
+   hold full history in memory), and flags a window as anomalous when
+   it's more than 2.5 standard deviations from that product's running
+   mean — Z-score outlier detection computed incrementally over an
+   unbounded stream, via `foreachBatch`.
+
+**Verified with a real spike, not just run**: sent steady baseline
+traffic (~8 events/min) for one product for 3 minutes, then a 60-event
+burst in 10 seconds, then more baseline. The job correctly built a
+baseline (mean≈5.3, stddev≈1.9) from the quiet windows and flagged the
+spike window (count=66) with `z_score=32.17` — far past the threshold.
+Session reconstruction was verified the same way: a distinct burst of
+8 events for one test user produced an HDFS session record with the
+exact right `event_count` and `products` list, correctly bounded to
+one session window.
+
+Session gap and watermark are configurable via `SESSION_GAP` /
+`SESSION_WATERMARK` env vars (defaults: 5 minutes / 10 minutes,
+realistic session semantics) — useful for shortening them during local
+testing so you don't have to wait ~15 minutes to see output.
+
+Uses the official `apache/spark` image, which — unlike the Hadoop
+images — does publish native arm64 builds, so no custom image was
+needed here.
+
 ## Running locally
 
 Requires Docker and Docker Compose, with **at least 12GB** allocated
@@ -156,8 +194,10 @@ big-data infrastructure needs real headroom.
 docker compose up --build
 ```
 
-This starts Postgres, Kafka, HDFS (namenode + datanode), and all six
-services. Wait for the logs to settle, then seed some sample data:
+This starts Postgres, Kafka, HDFS (namenode + datanode), a Spark
+standalone cluster (master + worker + the streaming job), and all six
+FastAPI/worker services. Wait for the logs to settle, then seed some
+sample data:
 
 ```bash
 pip install requests
@@ -233,7 +273,8 @@ docker compose down -v     # stop containers and wipe the Postgres volume
 │   ├── seed_data.py             # sample data + simulated traffic
 │   └── kafka_load_test.py       # measures real ingestion throughput
 ├── jobs/
-│   └── product-popularity/      # MapReduce mapper/reducer + driver script
+│   ├── product-popularity/      # MapReduce mapper/reducer + driver script
+│   └── spark-streaming/         # Structured Streaming: sessions + anomalies
 └── services/
     ├── product-service/
     ├── user-service/
@@ -272,8 +313,11 @@ Current status:
 - [x] MapReduce batch job for product popularity rankings (Hadoop
       Streaming, LocalJobRunner) — verified against two independent
       computations of the same ranking, identical results
-- [ ] Spark Structured Streaming for session reconstruction and
-      Z-score demand anomaly detection (speed layer)
+- [x] Spark Structured Streaming for session reconstruction and
+      Z-score demand anomaly detection (speed layer) — verified with a
+      real baseline-then-spike traffic test (z_score=32.17 correctly
+      flagged) and a real session that produced the exact expected
+      HDFS output
 - [ ] Spark MLlib ALS collaborative filtering, trained on the
       RetailRocket e-commerce dataset, with a measured Precision@10
 - [ ] HBase for low-latency user-item lookups

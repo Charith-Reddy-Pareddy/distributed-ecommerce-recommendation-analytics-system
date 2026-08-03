@@ -123,7 +123,84 @@ services:
     command: ["/job/run_job.sh"]
     volumes:
       - ./jobs/product-popularity:/job
+
+  # Spark standalone cluster (the speed layer's compute engine) -- the
+  # official apache/spark image supports native arm64, unlike the Hadoop
+  # images, so no custom build needed here.
+  spark-master:
+    image: apache/spark:3.5.2-python3
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"]
+    ports:
+      - "8090:8080"  # web UI (8080 avoided -- not otherwise used here, but
+                      # kept off the common default to reduce collision risk)
+      - "7077:7077"
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/ > /dev/null"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 20s
+
+  spark-worker:
+    image: apache/spark:3.5.2-python3
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077"]
+    environment:
+      SPARK_WORKER_CORES: "2"
+      SPARK_WORKER_MEMORY: 1g
+    mem_limit: 1280m
     depends_on:
+      spark-master:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8081/ > /dev/null"]
+      interval: 10s
+      timeout: 10s
+      retries: 15
+      start_period: 20s
+
+  # The speed layer itself: a long-running Structured Streaming job (not a
+  # one-shot batch job like the MapReduce popularity job), so it's part of
+  # the default `docker compose up`, not the "jobs" profile.
+  spark-streaming:
+    image: apache/spark:3.5.2-python3
+    # Ivy's package cache lives in plain container storage under /tmp (not a
+    # named volume, and not Ivy's default ~/.ivy2 -- this image's "spark"
+    # user has no home directory at all). /tmp is world-writable by
+    # default, whereas a named volume mounted there would be created
+    # root-owned and unwritable by the non-root "spark" user this image
+    # runs as. Trade-off: the ~20MB Kafka connector jars re-download on
+    # every container restart rather than being cached -- fine for a demo.
+    # Ivy also doesn't reliably create its own cache/jars subdirectories,
+    # so they're created explicitly first. Command (not entrypoint) is
+    # overridden so the image's own /opt/entrypoint.sh still runs first
+    # (JAVA_HOME/classpath setup) and passes this through via its
+    # pass-through case.
+    command:
+      - /bin/bash
+      - -c
+      - >
+        mkdir -p /tmp/.ivy2/cache /tmp/.ivy2/jars &&
+        exec /opt/spark/bin/spark-submit
+        --master spark://spark-master:7077
+        --packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.5.2
+        --conf spark.jars.ivy=/tmp/.ivy2
+        /job/session_and_anomaly.py
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      HDFS_URI: hdfs://hdfs-namenode:9000
+      # SESSION_GAP/SESSION_WATERMARK intentionally omitted here -- the
+      # job's own defaults (5 minutes / 10 minutes, realistic session
+      # semantics) apply. Override with shorter values only for fast
+      # local verification, e.g.: SESSION_GAP="30 seconds" SESSION_WATERMARK="1 minute"
+    volumes:
+      - ./jobs/spark-streaming:/job
+    mem_limit: 768m
+    depends_on:
+      spark-worker:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
       hdfs-datanode:
         condition: service_healthy
 
