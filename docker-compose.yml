@@ -504,6 +504,27 @@ services:
       cassandra:
         condition: service_healthy
 
+  # Single web interface tying together the three serving-layer pieces
+  # built earlier: Elasticsearch product search, Cassandra-backed live
+  # demand data, and HBase-backed ALS recommendations. A thin
+  # server-side proxy over those three services -- the browser only
+  # ever talks to this, never directly to the backend services.
+  dashboard:
+    build: ./services/dashboard
+    environment:
+      PRODUCT_SERVICE_URL: http://product-service:8000
+      RECOMMENDATION_SERVICE_URL: http://recommendation-service:8000
+      ANALYTICS_SERVICE_URL: http://analytics-service:8000
+    ports:
+      - "8006:8000"
+    depends_on:
+      product-service:
+        condition: service_started
+      recommendation-service:
+        condition: service_started
+      analytics-service:
+        condition: service_started
+
 volumes:
   pgdata:
   mongodata:

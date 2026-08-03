@@ -364,6 +364,33 @@ API and confirmed it was full-text searchable within about a second
 (Elasticsearch's near-real-time refresh), without waiting for the
 startup backfill.
 
+## Dashboard: Flask
+
+A single web page (`http://localhost:8006`) ties together the three
+serving-layer pieces above — it's a thin server-side proxy, deliberately:
+the browser only ever talks to Flask, never directly to
+product-service/analytics-service/recommendation-service, so there's no
+CORS setup and backend URLs stay server-side config, not exposed to the
+client.
+
+- **Product Search** — full-text and geo-filtered, hits Elasticsearch
+  through `product-service`.
+- **Live Demand** — a Chart.js line chart for a chosen product id,
+  polling every 5 seconds; the data comes from Cassandra, populated by
+  the Spark Structured Streaming job in real time.
+- **Personalized Recommendations** — looks up a visitor's precomputed
+  ALS recommendations from HBase through `recommendation-service`.
+
+**Verified interactively in an actual browser, not just via curl:**
+typed a search query and confirmed the UI filtered to the one matching
+product; entered Austin's coordinates in the geo search form and got
+back the exact same 6 product ids verified earlier at the API level;
+pushed 15 fresh events for a product through the real ingestion
+pipeline (`event-service` → Kafka → Spark → Cassandra) and watched the
+demand chart update on its own within one polling cycle, with no page
+reload or manual action — genuine end-to-end live behavior, not a
+static mock.
+
 ## Running locally
 
 Requires Docker and Docker Compose, with **at least 12GB** allocated
@@ -377,8 +404,9 @@ docker compose up --build
 This starts Postgres, MongoDB, Elasticsearch, Kafka, HDFS (namenode +
 datanode), ZooKeeper, HBase (master + regionserver + REST server),
 Cassandra, a Spark standalone cluster (master + worker + the streaming
-job), and all six FastAPI/worker services. Wait for the logs to settle, then seed some
-sample data:
+job), all six FastAPI/worker services, and the Flask dashboard at
+[http://localhost:8006](http://localhost:8006). Wait for the logs to
+settle, then seed some sample data:
 
 ```bash
 pip install requests
@@ -492,7 +520,8 @@ docker compose down -v     # stop containers and wipe the Postgres volume
     ├── recommendation-service/
     ├── analytics-service/
     ├── hdfs-sink/                # Kafka -> HDFS batching worker
-    └── hbase-loader/             # HDFS -> HBase recommendations loader
+    ├── hbase-loader/             # HDFS -> HBase recommendations loader
+    └── dashboard/                # Flask UI: search + live demand + recommendations
 ```
 
 Each service directory follows the same shape:
@@ -557,8 +586,11 @@ Current status:
       holds no persistent volume) — geo-filter verified against exactly
       the known set of products at one warehouse's coordinates, not
       just that the parameter was accepted
-- [ ] A Flask dashboard tying search, live demand, and recommendations
-      into one view
+- [x] A Flask dashboard tying search, live demand, and recommendations
+      into one view — verified interactively in a real browser
+      (typed search, geo search, and watched the live demand chart
+      auto-update within one polling cycle after pushing real events
+      through the actual ingestion pipeline), not just via curl
 
 ## Possible further extensions
 

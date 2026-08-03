@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>E-Commerce Analytics Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Distributed E-Commerce Recommendation Analytics System</h1>
+    <p class="subtitle">
+      Live view over the serving layer: Elasticsearch search, Cassandra demand data
+      (fed by Spark Structured Streaming), and HBase-served ALS recommendations.
+    </p>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Product Search <span class="badge">Elasticsearch</span></h2>
+      <form id="search-form">
+        <input type="text" id="search-q" placeholder="Search name / description / tags...">
+        <input type="text" id="search-category" placeholder="Category (optional)">
+        <button type="submit">Search</button>
+      </form>
+      <div class="geo-row">
+        <input type="number" id="search-lat" placeholder="Latitude" step="any">
+        <input type="number" id="search-lon" placeholder="Longitude" step="any">
+        <input type="number" id="search-radius" placeholder="Radius (km)" step="any">
+        <button type="button" id="geo-search-btn">Geo search</button>
+      </div>
+      <div id="search-results" class="results"></div>
+    </section>
+
+    <section class="card">
+      <h2>Live Demand <span class="badge">Cassandra / Spark Streaming</span></h2>
+      <div class="controls">
+        <label>Product ID: <input type="number" id="demand-product-id" value="1" min="1"></label>
+        <button type="button" id="demand-watch-btn">Watch</button>
+        <span id="demand-status" class="status"></span>
+      </div>
+      <canvas id="demand-chart" height="120"></canvas>
+    </section>
+
+    <section class="card">
+      <h2>Personalized Recommendations <span class="badge">ALS / HBase</span></h2>
+      <div class="controls">
+        <label>Visitor ID: <input type="number" id="rec-visitor-id" value="54" min="1"></label>
+        <button type="button" id="rec-lookup-btn">Look up</button>
+      </div>
+      <div id="rec-results" class="results"></div>
+    </section>
+  </main>
+
+  <script src="/static/dashboard.js"></script>
+</body>
+</html>
