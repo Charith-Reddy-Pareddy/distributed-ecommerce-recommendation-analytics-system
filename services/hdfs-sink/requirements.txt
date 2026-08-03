@@ -1,0 +1,2 @@
+confluent-kafka==2.5.3
+hdfs==2.7.3

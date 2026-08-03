@@ -55,6 +55,62 @@ services:
       retries: 15
       start_period: 30s
 
+  # HDFS -- the batch layer's raw event store. Built from a custom image
+  # (infra/hadoop) rather than a stock Hadoop image: both apache/hadoop and
+  # the popular bde2020/hadoop-* images are amd64-only, which means Rosetta
+  # emulation on Apple Silicon. Hadoop's JARs are architecture-neutral, so
+  # building on a native-arm64 JDK base avoids emulation entirely.
+  hdfs-namenode:
+    build: ./infra/hadoop
+    command: ["/entrypoint-namenode.sh"]
+    environment:
+      HDFS_NAMENODE_OPTS: -Xmx512m
+    ports:
+      - "9870:9870"
+    volumes:
+      - hdfs-namenode-data:/hadoop/dfs/name
+    mem_limit: 768m
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9870/ > /dev/null"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+
+  hdfs-datanode:
+    build: ./infra/hadoop
+    command: ["/entrypoint-datanode.sh"]
+    environment:
+      HDFS_DATANODE_OPTS: -Xmx512m
+    volumes:
+      - hdfs-datanode-data:/hadoop/dfs/data
+    mem_limit: 768m
+    depends_on:
+      hdfs-namenode:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9864/ > /dev/null"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+      start_period: 30s
+
+  # Consumes the same Kafka `events` topic as recommendation-service and
+  # analytics-service, but with a persistent (committed-offset) consumer
+  # group -- unlike those two, this one must NOT replay from the beginning
+  # on every restart, since it's writing an append-only archive to HDFS and
+  # replaying would duplicate every batch already written.
+  hdfs-sink:
+    build: ./services/hdfs-sink
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      WEBHDFS_URL: http://hdfs-namenode:9870
+    depends_on:
+      kafka:
+        condition: service_healthy
+      hdfs-datanode:
+        condition: service_healthy
+
   product-service:
     build: ./services/product-service
     environment:
@@ -116,3 +172,5 @@ services:
 volumes:
   pgdata:
   kafkadata:
+  hdfs-namenode-data:
+  hdfs-datanode-data:
