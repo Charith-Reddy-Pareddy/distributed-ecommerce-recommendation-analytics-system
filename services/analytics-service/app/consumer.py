@@ -1,10 +1,8 @@
-"""Consumes the same Redis Stream as recommendation-service, but builds
-a completely independent read model: rolling per-product counters and
-daily event counts, persisted to this service's own Postgres database.
-
-Each consumer replays the stream from the beginning on startup (via
-XRANGE) so its aggregates are always fully rebuildable from the event
-log, then tails new events with a blocking XREAD loop.
+"""Consumes the same Kafka `events` topic as recommendation-service,
+but builds a completely independent read model: rolling per-product
+counters and daily event counts, persisted to this service's own
+Postgres database. Each consumer is a fully independent reader of the
+same log -- this is the point of an event-bus architecture.
 """
 import json
 import threading
@@ -13,8 +11,8 @@ from datetime import date, datetime, timezone
 from sqlalchemy.dialects.postgresql import insert
 
 from .database import SessionLocal
+from .kafka_consumer import new_consumer
 from .models import DailyEventCount, ProductStats
-from .redis_client import STREAM_NAME, redis_client
 
 STAT_FIELD = {"view": "views", "add_to_cart": "add_to_carts", "purchase": "purchases"}
 
@@ -56,19 +54,15 @@ def _apply_event(event: dict) -> None:
 
 
 def consume_forever() -> None:
-    last_id = "0-0"
-    for entry_id, fields in redis_client.xrange(STREAM_NAME, min="-", max="+"):
-        _apply_event(json.loads(fields["data"]))
-        last_id = entry_id
-
-    while True:
-        response = redis_client.xread({STREAM_NAME: last_id}, block=5000, count=100)
-        if not response:
-            continue
-        for _, entries in response:
-            for entry_id, fields in entries:
-                _apply_event(json.loads(fields["data"]))
-                last_id = entry_id
+    consumer = new_consumer()
+    try:
+        while True:
+            msg = consumer.poll(timeout=1.0)
+            if msg is None or msg.error():
+                continue
+            _apply_event(json.loads(msg.value()))
+    finally:
+        consumer.close()
 
 
 def start_consumer() -> None:
