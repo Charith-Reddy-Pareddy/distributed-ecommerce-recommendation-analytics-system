@@ -15,6 +15,7 @@ services:
       - ./infra/postgres/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     ports:
       - "5432:5432"
+    mem_limit: 512m
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -52,7 +53,10 @@ services:
       ES_JAVA_OPTS: -Xms512m -Xmx512m
     ports:
       - "9200:9200"
-    mem_limit: 1024m
+    # Bumped from 1024m: observed sitting at ~1017MiB/1024MiB (99%) under
+    # normal load -- a 512m JVM heap needs real headroom above it for
+    # off-heap Lucene segment/file-cache memory, not just the heap itself.
+    mem_limit: 1536m
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health > /dev/null"]
       interval: 10s
@@ -150,6 +154,7 @@ services:
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       WEBHDFS_URL: http://hdfs-namenode:9870
+    mem_limit: 256m
     depends_on:
       kafka:
         condition: service_healthy
@@ -280,7 +285,10 @@ services:
       CASSANDRA_CLUSTER_NAME: ecommerce-cluster
     ports:
       - "9042:9042"
-    mem_limit: 1024m
+    # Bumped from 1024m: observed sitting at ~989MiB/1024MiB (96%) under
+    # normal load. Heap is 512m+128m newsize, but Cassandra needs real
+    # off-heap headroom for memtables, bloom filters, and compaction.
+    mem_limit: 1536m
     healthcheck:
       test: ["CMD-SHELL", "cqlsh -e 'describe cluster' > /dev/null"]
       interval: 15s
@@ -455,6 +463,7 @@ services:
       ELASTICSEARCH_URL: http://elasticsearch:9200
     ports:
       - "8001:8000"
+    mem_limit: 384m
     depends_on:
       mongo:
         condition: service_healthy
@@ -467,6 +476,7 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/user_db
     ports:
       - "8002:8000"
+    mem_limit: 384m
     depends_on:
       postgres:
         condition: service_healthy
@@ -477,6 +487,7 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
     ports:
       - "8003:8000"
+    mem_limit: 384m
     depends_on:
       kafka:
         condition: service_healthy
@@ -489,6 +500,10 @@ services:
       HBASE_REST_URL: http://hbase-rest:8080
     ports:
       - "8004:8000"
+    # A bit more than the other FastAPI services: holds the item-item
+    # similarity model in memory, rebuilt by replaying the full Kafka
+    # topic on every restart.
+    mem_limit: 512m
     depends_on:
       kafka:
         condition: service_healthy
@@ -505,6 +520,7 @@ services:
       CASSANDRA_HOST: cassandra
     ports:
       - "8005:8000"
+    mem_limit: 384m
     depends_on:
       postgres:
         condition: service_healthy
@@ -534,6 +550,7 @@ services:
       ELASTICSEARCH_URL: http://elasticsearch:9200
     ports:
       - "8007:8000"
+    mem_limit: 384m
     depends_on:
       postgres:
         condition: service_healthy
@@ -556,6 +573,7 @@ services:
       SERVING_OPTIMIZER_URL: http://serving-optimizer:8000
     ports:
       - "8006:8000"
+    mem_limit: 256m
     depends_on:
       product-service:
         condition: service_started
