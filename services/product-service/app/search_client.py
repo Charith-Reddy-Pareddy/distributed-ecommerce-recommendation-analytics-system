@@ -86,7 +86,8 @@ async def search_products(
     radius_km: float | None = None,
     sort: str | None = None,
     limit: int = 20,
-) -> list[dict]:
+    offset: int = 0,
+) -> dict:
     must: list[dict] = []
     filter_: list[dict] = []
 
@@ -117,9 +118,17 @@ async def search_products(
             {"geo_distance": {"distance": f"{radius_km}km", "location": {"lat": lat, "lon": lon}}}
         )
 
-    body: dict = {"query": {"bool": {"must": must, "filter": filter_}}, "size": limit}
+    body: dict = {
+        "query": {"bool": {"must": must, "filter": filter_}},
+        "size": limit,
+        "from": offset,
+        "track_total_hits": True,
+    }
     if sort in SORT_OPTIONS:
         body["sort"] = SORT_OPTIONS[sort]
 
     result = await client.search(index=INDEX_NAME, body=body)
-    return [hit["_source"] for hit in result["hits"]["hits"]]
+    return {
+        "results": [hit["_source"] for hit in result["hits"]["hits"]],
+        "total": result["hits"]["total"]["value"],
+    }

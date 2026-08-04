@@ -4,13 +4,13 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
-function renderProducts(container, products) {
-  container.innerHTML = "";
-  if (!products || products.length === 0) {
+function renderProducts(container, products, { append = false } = {}) {
+  if (!append) container.innerHTML = "";
+  if (!append && (!products || products.length === 0)) {
     container.innerHTML = '<div class="empty">No results.</div>';
     return;
   }
-  for (const p of products) {
+  for (const p of products || []) {
     const div = document.createElement("div");
     div.className = "result-item product-item";
     const image = p.images && p.images[0];
@@ -33,14 +33,42 @@ function renderProducts(container, products) {
   }
 }
 
-async function runSearch(params) {
+const SEARCH_PAGE_SIZE = 20;
+let searchState = { params: {}, offset: 0, total: 0, shown: 0 };
+
+function updateSearchStatus() {
+  const statusEl = document.getElementById("search-status");
+  const moreBtn = document.getElementById("load-more-btn");
+  statusEl.textContent = searchState.total
+    ? `Showing ${searchState.shown} of ${searchState.total} products`
+    : "";
+  moreBtn.style.display = searchState.shown < searchState.total ? "inline-block" : "none";
+}
+
+async function runSearch(params, { append = false } = {}) {
   const container = document.getElementById("search-results");
-  container.innerHTML = '<div class="empty">Searching...</div>';
-  const query = new URLSearchParams(params).toString();
+  if (append) {
+    searchState.offset += SEARCH_PAGE_SIZE;
+  } else {
+    searchState = { params, offset: 0, total: 0, shown: 0 };
+    container.innerHTML = '<div class="empty">Searching...</div>';
+  }
+  const query = new URLSearchParams({
+    ...searchState.params,
+    limit: SEARCH_PAGE_SIZE,
+    offset: searchState.offset,
+  }).toString();
   const resp = await fetch(`/api/search?${query}`);
   const data = await resp.json();
-  renderProducts(container, data.results);
+  renderProducts(container, data.results, { append });
+  searchState.total = data.total || 0;
+  searchState.shown = append ? searchState.shown + (data.results || []).length : (data.results || []).length;
+  updateSearchStatus();
 }
+
+document.getElementById("load-more-btn").addEventListener("click", () => {
+  runSearch(null, { append: true });
+});
 
 function currentSearchParams() {
   const params = {

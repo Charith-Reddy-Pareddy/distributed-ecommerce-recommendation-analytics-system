@@ -48,8 +48,9 @@ async def search(
     radius_km: float | None = None,
     sort: str | None = None,
     limit: int = 20,
+    offset: int = 0,
 ):
-    results = await search_products(
+    search_result = await search_products(
         query=q,
         category=category,
         brand=brand,
@@ -61,8 +62,16 @@ async def search(
         radius_km=radius_km,
         sort=sort,
         limit=limit,
+        offset=offset,
     )
-    return {"query": q, "category": category, "results": results}
+    return {
+        "query": q,
+        "category": category,
+        "results": search_result["results"],
+        "total": search_result["total"],
+        "offset": offset,
+        "limit": limit,
+    }
 
 
 @app.get("/products", response_model=list[schemas.ProductOut])
