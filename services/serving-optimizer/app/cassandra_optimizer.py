@@ -20,6 +20,7 @@ modeled; the demo just doesn't generate enough data for the underlying
 problem it would matter for at production scale.
 """
 import time
+from collections import defaultdict
 from datetime import date, datetime, timedelta, timezone
 
 from cassandra.cluster import Cluster
@@ -94,8 +95,8 @@ def run_cycle() -> None:
     partitions = _recent_partitions(session)
     cutoff = datetime.now(timezone.utc) - timedelta(minutes=config.CASSANDRA_LOOKBACK_MINUTES)
 
-    volume_by_product: dict[int, int] = {}
-    hourly_by_partition: dict[tuple[int, date], dict[int, int]] = {}
+    volume_by_product: dict[int, int] = defaultdict(int)
+    hourly_by_partition: dict[tuple[int, date], dict[int, int]] = defaultdict(lambda: defaultdict(int))
 
     for product_id, bucket_date in partitions:
         rows = session.execute(
@@ -103,12 +104,12 @@ def run_cycle() -> None:
             "WHERE product_id = %s AND bucket_date = %s",
             (product_id, bucket_date),
         )
-        hourly = hourly_by_partition.setdefault((product_id, bucket_date), {})
+        hourly = hourly_by_partition[(product_id, bucket_date)]
         for row in rows:
             event_minute = _as_utc(row.event_minute)
             if event_minute >= cutoff:
-                volume_by_product[product_id] = volume_by_product.get(product_id, 0) + row.event_count
-            hourly[event_minute.hour] = hourly.get(event_minute.hour, 0) + row.event_count
+                volume_by_product[product_id] += row.event_count
+            hourly[event_minute.hour] += row.event_count
 
     for (product_id, bucket_date), hours in hourly_by_partition.items():
         for hour, count in hours.items():
