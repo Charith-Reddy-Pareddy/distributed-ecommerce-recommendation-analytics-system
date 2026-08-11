@@ -4,6 +4,11 @@ function escapeHtml(str) {
   return div.innerHTML;
 }
 
+async function getJSON(url, options) {
+  const resp = await fetch(url, options);
+  return resp.json();
+}
+
 function renderProducts(container, products, { append = false } = {}) {
   if (!append) container.innerHTML = "";
   if (!append && (!products || products.length === 0)) {
@@ -58,8 +63,7 @@ async function runSearch(params, { append = false } = {}) {
     limit: SEARCH_PAGE_SIZE,
     offset: searchState.offset,
   }).toString();
-  const resp = await fetch(`/api/search?${query}`);
-  const data = await resp.json();
+  const data = await getJSON(`/api/search?${query}`);
   renderProducts(container, data.results, { append });
   searchState.total = data.total || 0;
   searchState.shown = append ? searchState.shown + (data.results || []).length : (data.results || []).length;
@@ -122,8 +126,7 @@ function getOrCreateChart() {
 async function refreshDemand(productId) {
   const statusEl = document.getElementById("demand-status");
   try {
-    const resp = await fetch(`/api/demand/${productId}?days=1`);
-    const data = await resp.json();
+    const data = await getJSON(`/api/demand/${productId}?days=1`);
     const points = (data.points || []).slice().reverse();
     const chart = getOrCreateChart();
     chart.data.labels = points.map((p) => p.event_minute.slice(11, 16));
@@ -173,7 +176,7 @@ let topProductsChart = null;
 let eventSummaryChart = null;
 
 async function refreshTopProducts() {
-  const allRows = await (await fetch("/api/top-products?limit=10")).json();
+  const allRows = await getJSON("/api/top-products?limit=10");
 
   // Resolve product names/brands for the chart labels via a batch lookup.
   const ids = allRows.map((r) => r.product_id);
@@ -226,8 +229,7 @@ async function refreshTopProducts() {
 }
 
 async function refreshEventSummary() {
-  const resp = await fetch("/api/summary");
-  const rows = await resp.json();
+  const rows = await getJSON("/api/summary");
 
   const days = [...new Set(rows.map((r) => r.day))].sort();
   const eventTypes = [...new Set(rows.map((r) => r.event_type))];
@@ -267,12 +269,10 @@ async function refreshTuning() {
   const statusEl = document.getElementById("tuning-status");
   const container = document.getElementById("tuning-decisions");
 
-  const [statusResp, decisionsResp] = await Promise.all([
-    fetch("/api/tuning/status"),
-    fetch("/api/tuning/decisions?limit=20"),
+  const [status, decisions] = await Promise.all([
+    getJSON("/api/tuning/status"),
+    getJSON("/api/tuning/decisions?limit=20"),
   ]);
-  const status = await statusResp.json();
-  const decisions = await decisionsResp.json();
 
   if (status.postgres) {
     const pg = status.postgres.active_auto_indexes || [];
