@@ -18,26 +18,25 @@ import psycopg2
 from . import config, decision_log, sql_analyzer
 
 
-def _optimizer_conn():
-    return psycopg2.connect(
-        host=config.PG_HOST,
-        port=config.PG_PORT,
-        user=config.PG_USER,
-        password=config.PG_PASSWORD,
-        dbname=config.PG_OPTIMIZER_DB,
-    )
-
-
-def _target_conn(datname: str):
+def _connect(dbname: str, autocommit: bool = False):
     conn = psycopg2.connect(
         host=config.PG_HOST,
         port=config.PG_PORT,
         user=config.PG_USER,
         password=config.PG_PASSWORD,
-        dbname=datname,
+        dbname=dbname,
     )
-    conn.autocommit = True
+    conn.autocommit = autocommit
     return conn
+
+
+def _optimizer_conn():
+    return _connect(config.PG_OPTIMIZER_DB)
+
+
+def _target_conn(datname: str):
+    # DDL (CREATE/DROP INDEX CONCURRENTLY) can't run inside a transaction.
+    return _connect(datname, autocommit=True)
 
 
 class ColumnState:
