@@ -1,15 +1,13 @@
 """Batches the Kafka `events` topic into HDFS as the raw, append-only
-archive that the batch layer (MapReduce, and later Spark MLlib) reads
-from. This is a standalone worker, not a FastAPI service -- it has no
-HTTP surface, it just runs the consume-batch-write loop forever.
+archive the batch layer (MapReduce, Spark MLlib) reads from. A
+standalone worker, not a FastAPI service -- no HTTP surface, just the
+consume-batch-write loop.
 
-Unlike recommendation-service and analytics-service (which use a fresh
-consumer group every restart to replay full history into an in-memory
-or SQL projection), this sink uses one *persistent* consumer group with
-committed offsets. Replaying from the beginning on every restart would
-re-write every batch that's already safely in HDFS -- the opposite of
-what an archival sink should do. Offsets are committed only after a
-batch is durably written, giving at-least-once delivery into HDFS.
+Unlike recommendation-service/analytics-service (fresh consumer group
+every restart, replaying full history into memory/SQL), this sink uses
+one *persistent* group with committed offsets -- replaying from scratch
+would re-write batches already safely in HDFS. Offsets commit only
+after a batch is durably written, giving at-least-once delivery.
 """
 import json
 import logging

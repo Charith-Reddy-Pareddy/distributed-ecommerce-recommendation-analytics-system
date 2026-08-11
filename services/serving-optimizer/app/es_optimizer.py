@@ -1,21 +1,15 @@
 """Autonomous Elasticsearch refresh_interval tuner.
 
-Elasticsearch's own /_stats API already gives a running total of indexing
-operations for the index -- no need for a separate telemetry pipeline,
-same reasoning as the Postgres tuner polling pg_stat_statements directly.
+Polls ES's own /_stats API for indexing rate -- same reasoning as the
+Postgres tuner polling pg_stat_statements directly, no separate pipeline
+needed.
 
-Honest, load-bearing caveat (found while designing this, not after):
-`create_product` is the only thing that writes into the `products` index
-in this codebase, and README.md already has a verified claim that a
-newly created product is full-text searchable within about a second.
-Raising refresh_interval during ANY indexing activity would directly
-regress that claim. So the burst threshold here is deliberately set
-above what a normal single (or even handful of) product creation(s)
-would ever produce, and is only realistically crossed by something like
-running seed_data.py's bulk load -- meaning normal single-product-create
-usage keeps the existing near-real-time behavior, and only a genuine
-bulk-load burst trades a few seconds of indexing latency for reduced
-refresh overhead.
+Load-bearing caveat: create_product is the only thing that writes into
+the products index, and README.md already claims a new product is
+searchable within ~1s. Raising refresh_interval on any indexing activity
+would break that. So the burst threshold sits well above normal
+single-product creation -- only a real bulk load (e.g. seed_data.py)
+crosses it, trading a few seconds of latency for less refresh overhead.
 """
 import time
 

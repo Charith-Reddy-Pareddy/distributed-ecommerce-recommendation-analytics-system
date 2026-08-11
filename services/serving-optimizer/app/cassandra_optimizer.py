@@ -1,23 +1,15 @@
 """Autonomous Cassandra partition-strategy tuner.
 
-Deliberately does NOT touch jobs/spark-streaming/cassandra_writer.py or
-the Spark Structured Streaming job that writes product_demand_by_minute
--- that job is already verified and runs on a critical path; coupling a
-new, independently-evolving feature into its per-row write path would put
-a new external failure mode (a Cassandra hiccup, a not-yet-started
-serving-optimizer) directly on that job's blast radius. Instead this
-polls product_demand_by_minute on its own cycle, the same read pattern
-analytics-service's cassandra_client.py already uses, and computes
-its own hot/cold classification and hourly rollup independently.
+Polls product_demand_by_minute on its own cycle (same read pattern as
+analytics-service's cassandra_client.py) instead of writing from inside
+the verified Spark Streaming job -- keeps that job's critical path free
+of a new failure mode from this independently-evolving feature.
 
-The `product_demand_by_hour` table is honestly a read-pattern rollup (a
-dashboard query over a wide time range reads <=24 rows/partition/day
-instead of <=1440), not a partition-size fix -- at this demo's actual
-event volume, product_demand_by_minute's partitions are nowhere near
-Cassandra's real large-partition problem threshold. The mechanism (hot
-products get a materialized coarser-grained view) is real and correctly
-modeled; the demo just doesn't generate enough data for the underlying
-problem it would matter for at production scale.
+product_demand_by_hour is a read-pattern rollup, not a partition-size
+fix: at this demo's event volume, minute-level partitions are nowhere
+near Cassandra's real large-partition threshold. The mechanism (hot
+products get a coarser materialized view) is real; the demo just
+doesn't generate enough data for the problem it solves at scale.
 """
 import time
 from collections import defaultdict

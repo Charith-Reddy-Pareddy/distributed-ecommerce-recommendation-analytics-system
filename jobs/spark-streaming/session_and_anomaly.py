@@ -1,24 +1,15 @@
-"""Spark Structured Streaming job (the speed layer): consumes the
-Kafka `events` topic live and runs two independent streaming queries
-against it --
+"""Spark Structured Streaming job (the speed layer): two independent
+queries over the live Kafka `events` topic.
 
-1. Session reconstruction: groups each user's events into sessions
-   using Spark's session_window (a gap-based window -- a new session
-   starts after 5 minutes of inactivity), writing finalized sessions
-   to HDFS as they close.
-2. Per-product demand: counts events per product in 1-minute tumbling
-   windows, which feeds two things from the same computation --
-   (a) Z-score anomaly detection: a running mean/variance per product
-       (Welford's online algorithm, since we can't hold the whole
-       history in memory), flagging a window when its count is more
-       than 2.5 standard deviations from that product's running mean;
-   (b) every window's count is also written to Cassandra as a
-       queryable time-series (see cassandra_writer.py) -- one
-       computation, two consumers, rather than computing the same
-       aggregate twice.
+1. Session reconstruction: groups each user's events via session_window
+   (5-minute inactivity gap), writing finalized sessions to HDFS.
+2. Per-product demand: 1-minute tumbling window counts, feeding both
+   Z-score anomaly detection (Welford's online algorithm -- no need to
+   hold full history) and a Cassandra time-series write (same
+   aggregate, two consumers, not computed twice -- see cassandra_writer.py).
 
-Both queries read from the same Kafka source but maintain independent
-offsets and state; that's normal for Structured Streaming.
+Both queries share the Kafka source but keep independent offsets and
+state, which is normal for Structured Streaming.
 """
 import os
 

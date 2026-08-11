@@ -1,22 +1,19 @@
 """Extracts (table, column, operator) predicates from pg_stat_statements'
 normalized query text.
 
-This is deliberately narrower than a general SQL parser (the inspiration
-project uses pglast, a full C-based Postgres grammar parser, to handle
-arbitrary hand-written SQL). Every query in this codebase is SQLAlchemy-
-generated, which is far more regular: columns are always fully qualified
-as `table.column`, and pg_stat_statements always normalizes literals to
-`$1`/`$2`/... regardless of driver. Confirmed against a real captured
-query before writing this:
+Narrower than a general SQL parser on purpose (the inspiration project
+uses pglast, a full grammar parser, for arbitrary hand-written SQL).
+Every query here is SQLAlchemy-generated: columns are always fully
+qualified as `table.column`, and pg_stat_statements always normalizes
+literals to `$1`/`$2`. Confirmed against a real captured query:
 
     SELECT users.id AS users_id, ...
     FROM users
     WHERE users.country = $1
      LIMIT $2 OFFSET $3
 
-A lightweight regex over the WHERE clause (isolated with sqlparse, so it
-doesn't accidentally match `=` inside a SELECT list or ON clause) is
-sufficient for this query mix and avoids a C-extension dependency.
+A regex over the WHERE clause (isolated with sqlparse so it can't match
+`=` in a SELECT list or ON clause) is enough here, with no C-extension.
 """
 import re
 

@@ -1,14 +1,12 @@
-"""One-shot batch job: reads the ALS top-10-recommendations-per-user
-table that jobs/als-training wrote to HDFS and loads it into HBase as
-the actual low-latency serving store. This is the piece that turns
-"we trained a model and wrote its output to HDFS" into "a live
-service can look up a user's precomputed recommendations in
-milliseconds" -- HDFS is fine for batch reads but isn't a point-lookup
-store; HBase is.
+"""One-shot batch job: loads the ALS top-10-recommendations-per-user
+table jobs/als-training wrote to HDFS into HBase, the actual
+low-latency serving store -- HDFS is fine for batch reads but isn't a
+point-lookup store; this is what turns "output sits in HDFS" into "a
+service can look it up in milliseconds."
 
 Uses HBase's built-in REST server (Stargate) over plain HTTP rather
-than a JVM/Thrift client, consistent with keeping this a lightweight
-Python service like the rest of the project's tooling.
+than a JVM/Thrift client, keeping this a lightweight Python service
+like the rest of the project.
 """
 import base64
 import json

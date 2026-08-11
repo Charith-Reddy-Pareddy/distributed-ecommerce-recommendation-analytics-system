@@ -1,15 +1,13 @@
 """Autonomous Postgres index tuner.
 
 Polls pg_stat_statements (one connection to optimizer_db sees every
-target database's query stats via the dbid column -- verified directly:
-the `postgres` user in this project's docker-compose.yml is a superuser),
-snapshot-diffs call counts to get a per-cycle delta, extracts WHERE-clause
-predicates from SELECT queries via sql_analyzer, and creates or drops
-`auto_idx_*` indexes based on real usage -- reimplementing the heuristics
-from github.com/nimit-pasricha/auto-indexing (call-count threshold,
-cardinality guard, table-size guard, write-ratio volatility guard,
-hash-vs-btree selection, staleness cleanup) against pg_stat_statements as
-the input instead of tailed log lines.
+target database's stats via the dbid column, since `postgres` is a
+superuser here), snapshot-diffs call counts, extracts WHERE-clause
+predicates via sql_analyzer, and creates/drops `auto_idx_*` indexes
+based on real usage -- reimplementing github.com/nimit-pasricha/
+auto-indexing's heuristics (call-count threshold, cardinality/table-size/
+write-ratio guards, hash-vs-btree, staleness cleanup) against
+pg_stat_statements instead of tailed log lines.
 """
 import time
 

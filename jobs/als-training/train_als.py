@@ -1,21 +1,15 @@
-"""Trains an ALS (Alternating Least Squares) implicit-feedback
-collaborative filtering model in Spark MLlib on the RetailRocket
-e-commerce clickstream dataset, evaluates it with Precision@10 on a
-held-out test split, and persists both the trained model and a
-precomputed top-10-recommendations-per-user table to HDFS.
+"""Trains an implicit-feedback ALS model in Spark MLlib on the real
+RetailRocket clickstream dataset, evaluates Precision@10 on a held-out
+split, and writes the model plus precomputed top-10-per-user recs to HDFS.
 
-This is the batch layer's recommendation model -- trained offline on
-the full historical dataset, as opposed to recommendation-service's
-in-memory cosine-similarity engine, which is always-current but only
-sees whatever has flowed through Kafka since it last restarted.
+The batch layer's recommender -- trained offline on full history, unlike
+recommendation-service's always-current but Kafka-since-restart-only
+in-memory engine.
 
-RetailRocket events are implicit feedback (view/addtocart/transaction),
-not explicit ratings, so `implicitPrefs=True` is used -- event weight
-becomes ALS's "confidence" input rather than a preference score to
-predict directly. Weights match the scheme used throughout this
-project (view=1, add_to_cart=3, purchase/transaction=5) for
-consistency with recommendation-service, analytics-service, and the
-MapReduce popularity job.
+RetailRocket events are implicit feedback, not ratings, so
+implicitPrefs=True: event weight becomes ALS's confidence input, not a
+predicted score. Same weighting as the rest of the project (view=1,
+add_to_cart=3, purchase=5) for consistency.
 """
 import os
 
@@ -31,17 +25,12 @@ RECS_OUTPUT_PATH = f"{HDFS_URI}/output/als-recommendations"
 
 EVENT_WEIGHTS = {"view": 1.0, "addtocart": 3.0, "transaction": 5.0}
 TOP_K = 10
-# RetailRocket is extremely sparse: median interactions per user is 1
-# across ~1.4M users and ~235K items (verified directly from the raw
-# CSV, not assumed). Evaluating Precision@K on users with only 1-2
-# total interactions is close to statistically meaningless -- with one
-# train example and one held-out test item, hitting that exact item in
-# a top-10 list out of 235K candidates is dominated by noise, not model
-# quality. Restricting evaluation to users with a minimum amount of
-# history is standard practice in recommender-systems evaluation (often
-# called k-core filtering); all interactions still contribute to
-# *training* regardless of this threshold -- it only gates which users
-# are included in the held-out test split.
+# RetailRocket is extremely sparse: median interactions/user is 1 across
+# ~1.4M users and ~235K items (verified from raw CSV). Precision@K on
+# users with 1-2 interactions is near-meaningless -- one held-out item
+# out of 235K candidates is mostly noise, not model quality. Restricting
+# eval to users with enough history (k-core filtering, standard practice)
+# fixes this; all interactions still count toward *training* regardless.
 MIN_INTERACTIONS_FOR_EVAL = 5
 
 EVENTS_SCHEMA = StructType(
@@ -159,15 +148,11 @@ def main() -> None:
     model.write().overwrite().save(MODEL_OUTPUT_PATH)
     print(f"[ALS] Model saved to {MODEL_OUTPUT_PATH}", flush=True)
 
-    # Precompute recommendations for "active" users only (same >=5-
-    # interaction threshold as evaluation), not the full ~1.4M-user base.
-    # Most RetailRocket users have exactly 1 interaction ever (verified:
-    # median is 1) -- there's no meaningful signal to recommend from for
-    # them, and recommendForUserSubset over the full user base turned out
-    # to be a genuinely disproportionate computation (ran over an hour
-    # without finishing on this hardware) for no real benefit. A real
-    # production system would compute recommendations on-demand for
-    # infrequent users rather than precomputing for everyone regardless.
+    # Precompute for "active" users only (same >=5-interaction threshold as
+    # eval), not all ~1.4M -- most users have exactly 1 interaction with no
+    # real signal to recommend from, and running this over everyone took
+    # over an hour without finishing. A real system would compute on-demand
+    # for infrequent users instead of precomputing for everyone.
     active_users = eligible_users
     all_recs = model.recommendForUserSubset(active_users, TOP_K)
     output = all_recs.selectExpr("visitorid", "explode(recommendations) as rec").select(

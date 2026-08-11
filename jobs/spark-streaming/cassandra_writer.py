@@ -1,16 +1,14 @@
-"""Writes per-product, per-minute demand window counts to Cassandra --
-the exact same counts already computed for Z-score anomaly detection
-in session_and_anomaly.py, reused here for a second purpose (a queryable
-time-series store) rather than recomputed from scratch.
+"""Writes per-product, per-minute demand counts to Cassandra -- the same
+counts already computed for Z-score anomaly detection in
+session_and_anomaly.py, reused here rather than recomputed.
 
-Partitioned by (product_id, bucket_date): a day's worth of per-minute
-counts for one product live in a single partition -- the standard
-Cassandra time-series pattern, bounding partition size by bucketing on
-time instead of letting one partition grow unboundedly.
+Partitioned by (product_id, bucket_date): a day's per-minute counts for
+one product live in one partition -- the standard Cassandra time-series
+pattern, bounding partition size by time bucketing.
 
 One connection per driver process, reused across all micro-batches
-(foreachBatch runs on the driver, not distributed to executors, so a
-single module-level session is safe here).
+(foreachBatch runs on the driver, not executors, so a module-level
+session is safe here).
 """
 import os
 
