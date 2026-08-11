@@ -27,8 +27,8 @@ EVENT_WEIGHTS = {"view": 1.0, "add_to_cart": 3.0, "purchase": 5.0}
 class RecommendationEngine:
     def __init__(self):
         self._lock = threading.Lock()
-        self.user_item: dict[int, dict[int, float]] = defaultdict(dict)
-        self.item_users: dict[int, dict[int, float]] = defaultdict(dict)
+        self.user_item: dict[int, dict[int, float]] = defaultdict(lambda: defaultdict(float))
+        self.item_users: dict[int, dict[int, float]] = defaultdict(lambda: defaultdict(float))
 
     def _apply_event(self, event: dict) -> None:
         user_id = event["user_id"]
@@ -36,12 +36,8 @@ class RecommendationEngine:
         weight = EVENT_WEIGHTS.get(event["event_type"], 1.0)
 
         with self._lock:
-            self.user_item[user_id][product_id] = (
-                self.user_item[user_id].get(product_id, 0.0) + weight
-            )
-            self.item_users[product_id][user_id] = (
-                self.item_users[product_id].get(user_id, 0.0) + weight
-            )
+            self.user_item[user_id][product_id] += weight
+            self.item_users[product_id][user_id] += weight
 
     def consume_forever(self) -> None:
         consumer = new_consumer()
