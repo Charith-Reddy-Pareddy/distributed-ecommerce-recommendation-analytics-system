@@ -20,7 +20,7 @@ MapReduce popularity job.
 import os
 
 from pyspark.sql import SparkSession, Window
-from pyspark.sql.functions import col, collect_set, count, row_number, size, sum as spark_sum, when
+from pyspark.sql.functions import col, collect_set, count, row_number, size, sum as spark_sum, udf, when
 from pyspark.sql.types import DoubleType, LongType, StringType, StructField, StructType
 from pyspark.ml.recommendation import ALS
 
@@ -99,8 +99,6 @@ def precision_at_k(model, train_df, test_df, k: int = TOP_K):
 
     def hit_count(recommended, actual_items):
         return len(set(recommended) & set(actual_items))
-
-    from pyspark.sql.functions import udf
 
     hit_count_udf = udf(hit_count, LongType())
     scored = joined.withColumn("hits", hit_count_udf(col("recommended_items"), col("actual_items")))
