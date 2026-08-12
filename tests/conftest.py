@@ -10,9 +10,21 @@ normally.
 """
 import importlib.util
 import sys
+import types
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
+
+# confluent-kafka is a C extension with no prebuilt wheel for every
+# platform (confirmed: no manylinux wheel exists for the pinned
+# version). Nothing under test calls it -- recommendation-service's
+# model.py imports it transitively via kafka_consumer.py just to
+# reference the Consumer class -- so a stub avoids that install risk
+# entirely instead of gambling on it working in CI.
+if "confluent_kafka" not in sys.modules:
+    stub = types.ModuleType("confluent_kafka")
+    stub.Consumer = type("Consumer", (), {})
+    sys.modules["confluent_kafka"] = stub
 
 
 def load_app_module(service_dirname: str, module_name: str, alias: str):
