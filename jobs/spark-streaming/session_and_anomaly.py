@@ -57,6 +57,13 @@ def build_events_stream(spark: SparkSession):
         .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP_SERVERS)
         .option("subscribe", "events")
         .option("startingOffsets", "latest")
+        # The `events` topic gets deleted and recreated during this
+        # project's own data-reset workflows (see README/serving-optimizer
+        # notes on cleaning up stale demo data), which resets offsets to 0.
+        # Without this, Spark's Kafka source treats that discontinuity as
+        # fatal data loss and kills the whole query -- correct default for
+        # a topic that shouldn't normally be recreated, wrong for this one.
+        .option("failOnDataLoss", "false")
         .load()
     )
     return (

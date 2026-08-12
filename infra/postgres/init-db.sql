@@ -4,3 +4,6 @@
 -- (see the mongo service in docker-compose.yml), not Postgres.
 CREATE DATABASE user_db;
 CREATE DATABASE analytics_db;
+-- Owned by serving-optimizer: an audit log of autonomous index/partition/
+-- refresh-interval decisions, kept separate from the databases it tunes.
+CREATE DATABASE optimizer_db;

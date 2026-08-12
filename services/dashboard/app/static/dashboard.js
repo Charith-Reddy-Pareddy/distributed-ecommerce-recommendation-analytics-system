@@ -261,9 +261,55 @@ async function refreshEventSummary() {
   });
 }
 
+// --- Autonomous tuning ------------------------------------------------
+
+async function refreshTuning() {
+  const statusEl = document.getElementById("tuning-status");
+  const container = document.getElementById("tuning-decisions");
+
+  const [statusResp, decisionsResp] = await Promise.all([
+    fetch("/api/tuning/status"),
+    fetch("/api/tuning/decisions?limit=20"),
+  ]);
+  const status = await statusResp.json();
+  const decisions = await decisionsResp.json();
+
+  if (status.postgres) {
+    const pg = status.postgres.active_auto_indexes || [];
+    const cass = status.cassandra || {};
+    const es = status.elasticsearch || {};
+    statusEl.textContent =
+      `${pg.length} auto-index(es) active · ` +
+      `${cass.hot_products || 0} hot / ${cass.cold_products || 0} cold products · ` +
+      `ES refresh: ${es.mode || "normal"}`;
+  }
+
+  container.innerHTML = "";
+  if (!decisions || decisions.length === 0) {
+    container.innerHTML = '<div class="empty">No decisions yet -- drive some real traffic to see the optimizer act.</div>';
+    return;
+  }
+  for (const d of decisions) {
+    const div = document.createElement("div");
+    div.className = "result-item";
+    div.innerHTML = `
+      <div>
+        <strong>[${escapeHtml(d.store)}] ${escapeHtml(d.action)}</strong><br>
+        <span class="meta">${escapeHtml(d.target)} &middot; ${escapeHtml(d.reason)}</span>
+      </div>
+      <div class="meta">${new Date(d.ts).toLocaleTimeString()}</div>
+    `;
+    container.appendChild(div);
+  }
+}
+
+let tuningPollHandle = null;
+
 // Initial load
 runSearch({});
 refreshDemand(document.getElementById("demand-product-id").value);
 lookupRecommendations(document.getElementById("rec-visitor-id").value);
 refreshTopProducts();
 refreshEventSummary();
+refreshTuning();
+tuningPollHandle = setInterval(refreshTuning, 10000);

@@ -1,6 +1,12 @@
 services:
   postgres:
     image: postgres:16-alpine
+    # shared_preload_libraries=pg_stat_statements is required for
+    # serving-optimizer's Postgres tuner: it reads pre-aggregated
+    # per-query call counts/timings straight from the source rather than
+    # tailing logs. pg_stat_statements ships in the stock image already
+    # (standard contrib module), so no custom image is needed here.
+    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements"]
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -394,7 +400,12 @@ services:
       # local verification, e.g.: SESSION_GAP="30 seconds" SESSION_WATERMARK="1 minute"
     volumes:
       - ./jobs/spark-streaming:/job
-    mem_limit: 768m
+    # Bumped from 768m: observed batches taking 30-40s against a 30s
+    # trigger interval (driver JVM sitting near this cap, not CPU
+    # contention -- docker stats showed the whole stack idle at the time)
+    # while running two streaming queries plus a growing running_stats
+    # dict, well past the state this project had when 768m was set.
+    mem_limit: 1280m
     depends_on:
       spark-worker:
         condition: service_healthy
@@ -504,6 +515,33 @@ services:
       cassandra:
         condition: service_healthy
 
+  # Autonomous tuner for the serving layer: watches real Postgres query
+  # patterns (pg_stat_statements), real per-product Cassandra demand
+  # volume (the existing product_demand_by_minute table), and real
+  # Elasticsearch indexing load (_stats), then actually creates/drops
+  # indexes, classifies hot/cold products, and adjusts refresh_interval
+  # -- inspired by github.com/nimit-pasricha/auto-indexing, extended
+  # across three stores instead of one (see README.md for the concrete
+  # differences). Independent of every other service: polls existing
+  # data rather than joining the Kafka/Spark pipeline, so a bug here
+  # cannot affect any already-verified service.
+  serving-optimizer:
+    build: ./services/serving-optimizer
+    environment:
+      PG_HOST: postgres
+      PG_TARGET_DBS: user_db,analytics_db
+      CASSANDRA_HOST: cassandra
+      ELASTICSEARCH_URL: http://elasticsearch:9200
+    ports:
+      - "8007:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      cassandra:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+
   # Single web interface tying together the three serving-layer pieces
   # built earlier: Elasticsearch product search, Cassandra-backed live
   # demand data, and HBase-backed ALS recommendations. A thin
@@ -515,6 +553,7 @@ services:
       PRODUCT_SERVICE_URL: http://product-service:8000
       RECOMMENDATION_SERVICE_URL: http://recommendation-service:8000
       ANALYTICS_SERVICE_URL: http://analytics-service:8000
+      SERVING_OPTIMIZER_URL: http://serving-optimizer:8000
     ports:
       - "8006:8000"
     depends_on:
@@ -523,6 +562,8 @@ services:
       recommendation-service:
         condition: service_started
       analytics-service:
+        condition: service_started
+      serving-optimizer:
         condition: service_started
 
 volumes:

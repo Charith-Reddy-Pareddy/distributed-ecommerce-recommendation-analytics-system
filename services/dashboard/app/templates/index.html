@@ -60,6 +60,22 @@
     </section>
 
     <section class="card">
+      <h2>Autonomous Tuning <span class="badge">Serving-Layer Optimizer</span></h2>
+      <p class="subtitle">
+        An independent service that watches real Postgres query patterns, real
+        per-product Cassandra demand volume, and real Elasticsearch indexing
+        load, and actually acts on what it observes -- creating/dropping
+        Postgres indexes, classifying products hot/cold for Cassandra, and
+        adjusting Elasticsearch's refresh_interval. See the README for how
+        this differs from its inspiration.
+      </p>
+      <div class="controls">
+        <span id="tuning-status" class="status"></span>
+      </div>
+      <div id="tuning-decisions" class="results"></div>
+    </section>
+
+    <section class="card">
       <h2>Live Demand <span class="badge">Cassandra / Spark Streaming</span></h2>
       <div class="controls">
         <label>Product ID: <input type="number" id="demand-product-id" value="1" min="1"></label>

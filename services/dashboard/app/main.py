@@ -17,6 +17,7 @@ from flask import Flask, jsonify, render_template, request
 PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL", "http://product-service:8000")
 RECOMMENDATION_SERVICE_URL = os.getenv("RECOMMENDATION_SERVICE_URL", "http://recommendation-service:8000")
 ANALYTICS_SERVICE_URL = os.getenv("ANALYTICS_SERVICE_URL", "http://analytics-service:8000")
+SERVING_OPTIMIZER_URL = os.getenv("SERVING_OPTIMIZER_URL", "http://serving-optimizer:8000")
 
 app = Flask(__name__)
 
@@ -85,6 +86,27 @@ def top_products():
 def event_summary():
     try:
         resp = requests.get(f"{ANALYTICS_SERVICE_URL}/analytics/summary", timeout=5)
+        resp.raise_for_status()
+        return jsonify(resp.json())
+    except requests.RequestException as e:
+        return jsonify({"error": str(e)}), 502
+
+
+@app.get("/api/tuning/decisions")
+def tuning_decisions():
+    limit = request.args.get("limit", "20")
+    try:
+        resp = requests.get(f"{SERVING_OPTIMIZER_URL}/tuning/decisions", params={"limit": limit}, timeout=5)
+        resp.raise_for_status()
+        return jsonify(resp.json())
+    except requests.RequestException as e:
+        return jsonify({"error": str(e)}), 502
+
+
+@app.get("/api/tuning/status")
+def tuning_status():
+    try:
+        resp = requests.get(f"{SERVING_OPTIMIZER_URL}/tuning/status", timeout=5)
         resp.raise_for_status()
         return jsonify(resp.json())
     except requests.RequestException as e:

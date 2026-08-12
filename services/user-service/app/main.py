@@ -20,8 +20,13 @@ def create_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
 
 @app.get("/users", response_model=list[schemas.UserOut])
-def list_users(skip: int = 0, limit: int = 100, db: Session = Depends(get_db)):
-    return crud.list_users(db, skip, limit)
+def list_users(
+    skip: int = 0,
+    limit: int = 100,
+    country: str | None = None,
+    db: Session = Depends(get_db),
+):
+    return crud.list_users(db, skip, limit, country)
 
 
 @app.get("/users/{user_id}", response_model=schemas.UserOut)
