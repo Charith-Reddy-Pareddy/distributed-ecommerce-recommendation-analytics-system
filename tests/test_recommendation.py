@@ -1,3 +1,5 @@
+# Claude helped suggest additional recommendation edge cases.
+# The final cases were reviewed and adapted to the implementation.
 from conftest import load_app_module
 
 model = load_app_module("recommendation-service", "model", "recsvc_app")

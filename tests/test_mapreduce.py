@@ -1,3 +1,5 @@
+# Claude was used to suggest a few edge cases for this test module.
+# The final tests were reviewed and adapted to the implementation.
 import importlib.util
 import io
 import sys

@@ -1,3 +1,5 @@
+# Claude was used as a second pair of eyes for a few optimizer edge cases.
+# The final tests were reviewed and adapted to the implementation.
 from unittest.mock import MagicMock
 
 from psycopg2 import sql

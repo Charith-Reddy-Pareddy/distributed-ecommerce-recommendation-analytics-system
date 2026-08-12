@@ -1,3 +1,5 @@
+# Claude helped suggest a few parser edge cases.
+# The final tests were reviewed and adjusted against the implementation.
 from conftest import load_app_module
 
 sql_analyzer = load_app_module("serving-optimizer", "sql_analyzer", "optsvc_app")

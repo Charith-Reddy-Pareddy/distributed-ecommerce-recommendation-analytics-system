@@ -317,8 +317,10 @@ Spark trigger interval:   30s for both streaming queries
 Anomaly detection:        one controlled 60-event/10s burst, flagged at z_score=32.17
 ALS Precision@10:         0.0055 (RetailRocket, ~2.75M events, ~1.4M users)
 HBase point lookup:       ~10ms average over the REST layer
+```markdown
 Product catalog:          300 Amazon products
 ```
+
 
 ## Running locally
 
@@ -529,3 +531,14 @@ would -- keeping the Cassandra writer correct under Spark's `update`
 mode, or noticing partway through that the ALS model and the
 in-memory CF model had no real relationship to each other. More on
 that in [Trade-offs and lessons learned](#trade-offs-and-lessons-learned).
+
+## AI assistance
+
+I used Claude selectively during development for a limited amount of
+documentation, test scaffolding, repetitive boilerplate, and code-review
+feedback. I reviewed and adapted those suggestions before incorporating
+them into the project.I remain responsible for the final code, tests, documentation, design
+decisions, and reported results in this repository.
+
+See [`docs/AI_ASSISTANCE.md`](docs/AI_ASSISTANCE.md) for details.
+
