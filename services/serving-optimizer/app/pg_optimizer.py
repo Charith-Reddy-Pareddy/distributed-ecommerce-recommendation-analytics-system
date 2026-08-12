@@ -2,6 +2,7 @@
 import time
 
 import psycopg2
+from psycopg2 import sql
 
 from . import config, decision_log, sql_analyzer
 
@@ -66,7 +67,7 @@ def _fetch_statement_deltas(conn, last_snapshot: dict) -> tuple[dict, dict]:
 
 def _table_size_too_small(conn, table: str) -> bool:
     with conn.cursor() as cur:
-        cur.execute(f'ANALYZE "{table}"')
+        cur.execute(sql.SQL("ANALYZE {}").format(sql.Identifier(table)))
         cur.execute("SELECT relpages, reltuples FROM pg_class WHERE relname = %s", (table,))
         row = cur.fetchone()
     if not row:
@@ -103,7 +104,14 @@ def _index_exists(conn, index_name: str) -> bool:
 def _create_index(conn, datname: str, table: str, column: str, index_type: str) -> str:
     name = f"auto_idx_{index_type}_{table}_{column}"
     with conn.cursor() as cur:
-        cur.execute(f'CREATE INDEX CONCURRENTLY "{name}" ON "{table}" USING {index_type} ("{column}")')
+        cur.execute(
+            sql.SQL("CREATE INDEX CONCURRENTLY {index} ON {table} USING {method} ({column})").format(
+                index=sql.Identifier(name),
+                table=sql.Identifier(table),
+                method=sql.Identifier(index_type),
+                column=sql.Identifier(column),
+            )
+        )
     decision_log.record(
         "postgres",
         "create_index",
@@ -116,7 +124,7 @@ def _create_index(conn, datname: str, table: str, column: str, index_type: str) 
 
 def _drop_index(conn, datname: str, index_name: str, reason: str) -> None:
     with conn.cursor() as cur:
-        cur.execute(f'DROP INDEX CONCURRENTLY IF EXISTS "{index_name}"')
+        cur.execute(sql.SQL("DROP INDEX CONCURRENTLY IF EXISTS {}").format(sql.Identifier(index_name)))
     decision_log.record("postgres", "drop_index", f"{datname}.{index_name}", reason, {"index_name": index_name})
 
 
