@@ -1,0 +1,5 @@
+pytest==8.3.3
+pydantic==2.9.2
+sqlparse==0.5.1
+psycopg2-binary==2.9.9
+confluent-kafka==2.5.3
