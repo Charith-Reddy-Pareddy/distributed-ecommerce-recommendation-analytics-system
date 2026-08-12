@@ -1,14 +1,11 @@
 """Fires concurrent requests at event-service's /events endpoint for a
-fixed duration and reports the measured throughput. This is the real
-number behind any "N events/sec ingested through Kafka" claim -- it is
-computed here, not assumed.
+fixed duration and reports the measured throughput.
 
-A single Python process running asyncio tops out well below what the
-server can actually handle (confirmed separately with ApacheBench: the
-server sustains 4000+ req/sec while one asyncio process here plateaus
-around 200-300/sec). This script works around that by running several
-worker *processes* in parallel, each with its own event loop, so the
-measured number reflects server capacity rather than client overhead.
+A single Python process running asyncio plateaus around 200-300/sec
+regardless of server capacity (the server itself sustains 4000+/sec
+under ApacheBench), so this runs several worker processes in
+parallel, each with its own event loop, to measure real throughput
+instead of client overhead.
 
 Usage (with the stack already up via `docker compose up`):
 
