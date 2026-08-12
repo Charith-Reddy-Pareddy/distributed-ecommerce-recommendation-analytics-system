@@ -1,11 +1,9 @@
-"""Seed the running services with real Amazon product data, sample
-users, and simulated interaction events so the recommendation, search,
-and analytics endpoints have something real to work with.
+"""Seeds the running services with real Amazon product data, sample
+users, and simulated interaction events so the recommendation,
+search, and analytics endpoints have something to work with.
 
-Product data comes from data/amazon_products.json -- 300 real Amazon
-products (real titles, brands, prices, images, ratings, and ASINs)
-extracted from the public McAuley-Lab/Amazon-Reviews-2023 dataset via
-scripts/fetch_amazon_products.py. Not synthetic/placeholder data.
+Product data comes from data/amazon_products.json, 300 real Amazon
+products extracted via scripts/fetch_amazon_products.py.
 
 Usage (with all services already up via `docker compose up`):
 

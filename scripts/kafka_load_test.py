@@ -1,9 +1,8 @@
 """Fires concurrent requests at event-service's /events endpoint for a
 fixed duration and reports the measured throughput.
 
-Runs multiple worker processes in parallel, since a single asyncio
-process plateaus around 200-300/sec regardless of server capacity --
-this way the number reflects server throughput, not client overhead.
+Runs multiple worker processes in parallel -- a single asyncio
+process plateaus around 200-300/sec regardless of server capacity.
 
 Usage (with the stack already up via `docker compose up`):
 

@@ -1,25 +1,15 @@
 """Extracts a sample of real Amazon product records from the
-McAuley-Lab/Amazon-Reviews-2023 dataset (a real, public academic
-dataset -- see https://amazon-reviews-2023.github.io/) and writes them
-to data/amazon_products.json for scripts/seed_data.py to load.
+McAuley-Lab/Amazon-Reviews-2023 dataset and writes them to
+data/amazon_products.json for scripts/seed_data.py to load.
 
-This replaces the earlier synthetic, made-up demo catalog
-(fabricated names like "Electronics Item 1", fake brands, stock
-placeholder images) with real product titles, brands, prices, images,
-ratings, and Amazon Standard Identification Numbers (ASINs).
-
-Doesn't download full category files (some are 1.6M+ items and
-multiple GB): reads only the first Parquet row group of each category
-via HTTP range requests (pyarrow + fsspec), which is enough rows to
-sample a few hundred products without pulling gigabytes of data.
+Reads only the first Parquet row group of each category via HTTP
+range requests (pyarrow + fsspec), enough to sample a few hundred
+products without downloading full multi-GB category files.
 
 Usage:
 
     pip install pyarrow fsspec aiohttp requests
     python scripts/fetch_amazon_products.py
-
-Only needs to be re-run if you want a different sample; the output is
-already committed to the repo at data/amazon_products.json.
 """
 import json
 from pathlib import Path
