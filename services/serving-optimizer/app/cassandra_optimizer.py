@@ -13,6 +13,7 @@ KEYSPACE = "ecommerce"
 MINUTE_TABLE = "product_demand_by_minute"
 HOUR_TABLE = "product_demand_by_hour"
 STRATEGY_TABLE = "partition_strategy"
+ACTIVE_PARTITIONS_TABLE = "active_partitions"
 
 _state = {}
 
@@ -54,16 +55,17 @@ def _get_session():
     return session
 
 
-def _as_date(value) -> date:
-    # cassandra-driver returns dates as cassandra.util.Date, not datetime.date
-    return value.date() if hasattr(value, "date") else value
-
-
 def _recent_partitions(session, days: int = 2) -> set[tuple[int, date]]:
-    # DISTINCT on partition-key columns only -- a partition scan, not a full scan
-    rows = session.execute(f"SELECT DISTINCT product_id, bucket_date FROM {MINUTE_TABLE}")
-    cutoff = date.today() - timedelta(days=days)
-    return {(r.product_id, _as_date(r.bucket_date)) for r in rows if _as_date(r.bucket_date) >= cutoff}
+    # Only need the recent product/date partitions.
+    partitions = set()
+    for offset in range(days + 1):
+        bucket_date = date.today() - timedelta(days=offset)
+        rows = session.execute(
+            f"SELECT product_id FROM {ACTIVE_PARTITIONS_TABLE} WHERE bucket_date = %s",
+            (bucket_date,),
+        )
+        partitions.update((r.product_id, bucket_date) for r in rows)
+    return partitions
 
 
 def _as_utc(dt: datetime) -> datetime:
