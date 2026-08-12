@@ -25,10 +25,7 @@ RECS_OUTPUT_PATH = f"{HDFS_URI}/output/als-recommendations"
 
 EVENT_WEIGHTS = {"view": 1.0, "addtocart": 3.0, "transaction": 5.0}
 TOP_K = 10
-# RetailRocket is extremely sparse (median 1 interaction/user), so
-# evaluating on users with too little history is mostly noise. Eval is
-# restricted to users with enough interactions (k-core filtering);
-# training still uses everyone.
+# Evaluate only users with enough history for a meaningful split.
 MIN_INTERACTIONS_FOR_EVAL = 5
 
 EVENTS_SCHEMA = StructType(
