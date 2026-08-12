@@ -5,7 +5,7 @@ to HDFS.
 import os
 
 from pyspark.sql import SparkSession, Window
-from pyspark.sql.functions import col, collect_set, count, row_number, size, sum as spark_sum, udf, when
+from pyspark.sql.functions import array_intersect, col, collect_set, count, row_number, size, sum as spark_sum, when
 from pyspark.sql.types import DoubleType, LongType, StringType, StructField, StructType
 from pyspark.ml.recommendation import ALS
 
@@ -70,11 +70,11 @@ def precision_at_k(model, train_df, test_df, k: int = TOP_K):
 
     joined = top_k_recs.join(actual, on="visitorid", how="inner")
 
-    def hit_count(recommended, actual_items):
-        return len(set(recommended) & set(actual_items))
-
-    hit_count_udf = udf(hit_count, LongType())
-    scored = joined.withColumn("hits", hit_count_udf(col("recommended_items"), col("actual_items")))
+    # Native array_intersect + size instead of a Python UDF, so the hit
+    # count runs in the JVM rather than round-tripping rows through Python.
+    scored = joined.withColumn(
+        "hits", size(array_intersect(col("recommended_items"), col("actual_items")))
+    )
     scored = scored.withColumn("precision", col("hits") / k)
 
     result = scored.agg({"precision": "avg"}).collect()[0][0]
