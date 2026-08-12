@@ -1,9 +1,9 @@
-"""Elasticsearch integration: full-text search over name/description/
-tags, with structured filters (category, brand, price, rating) and an
-optional geo-distance filter over the same warehouse location MongoDB
-stores. Indexed on every product create (crud.py), plus a startup
-backfill -- ES has no persistent volume here, so a restart starts
-empty and self-heals from MongoDB, the source of truth.
+"""Elasticsearch integration for product search: full-text, filters,
+and geo-distance queries.
+
+The index has no persistent storage, so it's rebuilt from MongoDB
+every time the service restarts, and updated whenever a product is
+created.
 """
 import os
 
