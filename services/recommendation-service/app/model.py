@@ -1,14 +1,7 @@
 """In-memory item-based collaborative filtering engine.
 
-Rebuilds its state by replaying the full Kafka `events` topic on
-startup, then updates incrementally as new events arrive -- stateless
-from a deployment standpoint, since Kafka is the source of truth and
-this is just a fast in-memory projection of it.
-
-The *speed-layer-adjacent* recommender: fast and always-current, but
-rebuilt from scratch on restart. The Spark MLlib ALS model (batch
-layer) is the higher-quality one, trained offline and served from
-HBase; this engine is the real-time fallback / comparison baseline.
+The model rebuilds its state from Kafka when the service starts and
+then updates as new events arrive.
 """
 import json
 import math
