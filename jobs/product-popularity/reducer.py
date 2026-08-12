@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """MapReduce reducer: sums weights per product_id.
 
-Relies on the standard Hadoop Streaming guarantee that the shuffle
-phase delivers all records for a given key contiguously and sorted --
-that's what makes the simple "compare to previous key" accumulation
-pattern below correct, rather than needing an in-memory dict keyed by
-every product (which wouldn't scale to a real dataset).
+Relies on Hadoop Streaming's guarantee that shuffle delivers all
+records for a key contiguously and sorted, so a simple
+compare-to-previous-key accumulation works without an in-memory dict.
 """
 import sys
 

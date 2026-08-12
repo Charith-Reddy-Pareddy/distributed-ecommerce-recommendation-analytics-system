@@ -75,9 +75,7 @@ def run_anomaly_detection(events):
         .agg(count("*").alias("event_count"))
     )
 
-    # Welford's online algorithm for running mean/variance per product.
-    # Driver-local state -- fine here, but wouldn't survive a driver
-    # restart in production.
+    # Welford's online algorithm for running mean/variance per product
     running_stats: dict[int, tuple[int, float, float]] = {}
 
     def process_batch(batch_df, batch_id):

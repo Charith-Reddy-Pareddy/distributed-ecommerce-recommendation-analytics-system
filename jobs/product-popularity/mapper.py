@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""MapReduce mapper: reads raw event JSON lines from HDFS (one per
-line, as hdfs-sink writes them) and emits (product_id, weight) pairs.
-Hadoop Streaming feeds this process stdin/stdout -- no Hadoop-specific
-API needed, just read lines, write tab-separated key\\tvalue pairs.
+"""MapReduce mapper: reads raw event JSON lines from HDFS and emits
+(product_id, weight) pairs over stdout as tab-separated key/value
+pairs, per Hadoop Streaming's protocol.
 """
 import json
 import sys
