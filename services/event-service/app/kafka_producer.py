@@ -1,13 +1,8 @@
-"""Publishes ingested events onto the `events` Kafka topic, which is the
-durable log that every downstream consumer reads from independently:
-recommendation-service and analytics-service tail it in real time, an
-HDFS sink batches it into cold storage for the batch layer, and Spark
-Structured Streaming consumes it for session reconstruction and
-anomaly detection.
+"""Publishes ingested events onto the `events` Kafka topic, the
+durable log every downstream consumer reads from independently.
 
-event-service itself keeps no database -- Kafka *is* its persistence.
-This keeps the ingestion path on the hot path doing only two things:
-validate, then produce.
+event-service keeps no database of its own -- Kafka is its
+persistence, so ingestion just validates and produces.
 """
 import json
 import os

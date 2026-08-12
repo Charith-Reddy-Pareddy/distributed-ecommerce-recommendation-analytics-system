@@ -1,9 +1,6 @@
 """Queries the per-product, per-minute demand time series that the
 Spark Structured Streaming job writes to Cassandra (see
-jobs/spark-streaming/cassandra_writer.py). Cassandra is the right tool
-for this specific job -- high write throughput, partitioned by
-(product_id, day) -- where Postgres (used for the other analytics
-endpoints in this service) is not.
+jobs/spark-streaming/cassandra_writer.py).
 """
 import os
 from datetime import date, timedelta

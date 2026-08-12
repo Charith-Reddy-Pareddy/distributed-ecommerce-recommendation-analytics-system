@@ -1,16 +1,9 @@
-"""Thin client for HBase's REST server (Stargate) -- fetches the ALS
-batch-layer recommendations that jobs/hbase-load-recommendations
-loaded from HDFS, for low-latency point lookups by user id.
+"""Thin client for HBase's REST server (Stargate) -- fetches
+precomputed ALS recommendations for low-latency lookups by user id.
 
-Note on IDs: these are RetailRocket's item ids (the real, external
-dataset the ALS model was trained on), not this project's own demo
-product-service catalog (ids 1-20, seeded via scripts/seed_data.py).
-They're two intentionally separate id spaces -- the RetailRocket data
-exists to train and evaluate a real model at real scale, while the
-demo catalog exists to exercise the live microservices end-to-end
-without needing a full external catalog wired into every service. So
-unlike the other /recommendations endpoints, this one does not (and
-cannot) enrich results via product-service.
+Uses RetailRocket's item ids, a different id space from this
+project's demo catalog, so results can't be enriched via
+product-service.
 """
 import base64
 import os

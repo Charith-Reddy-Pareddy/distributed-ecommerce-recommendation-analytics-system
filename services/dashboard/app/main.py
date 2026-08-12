@@ -1,13 +1,8 @@
-"""Flask dashboard: a single web interface tying together the three
-serving-layer pieces built earlier -- Elasticsearch product search,
-Cassandra-backed live demand data (populated by the Spark Structured
-Streaming job), and HBase-backed ALS recommendations -- into one page.
+"""Flask dashboard tying together product search, live demand data,
+and ALS recommendations into one page.
 
-This is a thin proxy layer, deliberately: the browser never talks to
-product-service/analytics-service/recommendation-service directly (no
-CORS setup needed, and it keeps service URLs as server-side config,
-not exposed to the client), it talks to Flask, and Flask forwards to
-whichever backend service actually owns that data.
+A thin proxy: the browser only talks to Flask, which forwards to
+whichever backend service owns the data.
 """
 import os
 

@@ -1,8 +1,6 @@
-"""Consumes the same Kafka `events` topic as recommendation-service,
-but builds a completely independent read model: rolling per-product
-counters and daily event counts, persisted to this service's own
-Postgres database. Each consumer is a fully independent reader of the
-same log -- this is the point of an event-bus architecture.
+"""Consumes the Kafka `events` topic independently of
+recommendation-service, building rolling per-product and daily event
+counters in this service's own Postgres database.
 """
 import json
 import threading
