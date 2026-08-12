@@ -1,8 +1,4 @@
-"""All thresholds are env-overridable and deliberately small: this is a
-local demo, not a production tuning loop, so the defaults are chosen to
-make create -> verify -> cleanup cycles observable in a few minutes of
-manual testing rather than hours.
-"""
+"""Tuning thresholds, all overridable via environment variables."""
 import os
 
 PG_HOST = os.getenv("PG_HOST", "postgres")

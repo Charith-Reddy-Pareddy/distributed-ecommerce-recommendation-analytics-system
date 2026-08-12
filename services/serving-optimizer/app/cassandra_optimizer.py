@@ -1,15 +1,5 @@
-"""Autonomous Cassandra partition-strategy tuner.
-
-Polls product_demand_by_minute on its own cycle (same read pattern as
-analytics-service's cassandra_client.py) instead of writing from inside
-the verified Spark Streaming job -- keeps that job's critical path free
-of a new failure mode from this independently-evolving feature.
-
-product_demand_by_hour is a read-pattern rollup, not a partition-size
-fix: at this demo's event volume, minute-level partitions are nowhere
-near Cassandra's real large-partition threshold. The mechanism (hot
-products get a coarser materialized view) is real; the demo just
-doesn't generate enough data for the problem it solves at scale.
+"""Classifies products as hot or cold by recent traffic and rolls hot
+products up into an hourly demand table.
 """
 import time
 from collections import defaultdict

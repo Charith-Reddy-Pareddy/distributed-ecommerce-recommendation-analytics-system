@@ -1,14 +1,4 @@
-"""Autonomous Postgres index tuner.
-
-Polls pg_stat_statements (one connection to optimizer_db sees every
-target database's stats via the dbid column, since `postgres` is a
-superuser here), snapshot-diffs call counts, extracts WHERE-clause
-predicates via sql_analyzer, and creates/drops `auto_idx_*` indexes
-based on real usage -- reimplementing github.com/nimit-pasricha/
-auto-indexing's heuristics (call-count threshold, cardinality/table-size/
-write-ratio guards, hash-vs-btree, staleness cleanup) against
-pg_stat_statements instead of tailed log lines.
-"""
+"""Automatically creates and removes Postgres indexes based on query usage."""
 import time
 
 import psycopg2

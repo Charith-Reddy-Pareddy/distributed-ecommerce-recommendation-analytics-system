@@ -1,11 +1,9 @@
 """Fires concurrent requests at event-service's /events endpoint for a
 fixed duration and reports the measured throughput.
 
-A single Python process running asyncio plateaus around 200-300/sec
-regardless of server capacity (the server itself sustains 4000+/sec
-under ApacheBench), so this runs several worker processes in
-parallel, each with its own event loop, to measure real throughput
-instead of client overhead.
+Runs multiple worker processes in parallel, since a single asyncio
+process plateaus around 200-300/sec regardless of server capacity --
+this way the number reflects server throughput, not client overhead.
 
 Usage (with the stack already up via `docker compose up`):
 

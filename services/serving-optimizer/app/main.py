@@ -1,12 +1,5 @@
-"""Autonomous serving-layer optimizer: three independent background
-tuners (Postgres indexes, Cassandra partition strategy, Elasticsearch
-refresh_interval), each polling its own store's already-aggregated
-telemetry (pg_stat_statements, the existing product_demand_by_minute
-table, ES's _stats API) rather than a shared streaming pipeline -- a bug
-in one tuner cannot affect another or any existing verified service.
-Inspired by github.com/nimit-pasricha/auto-indexing (see README.md for
-the concrete differences); this reimplements the idea's heuristics
-independently, extended across three stores instead of one.
+"""Runs the Postgres, Cassandra, and Elasticsearch tuners as background
+threads and exposes their status over HTTP.
 """
 import threading
 from contextlib import asynccontextmanager

@@ -1,15 +1,6 @@
-"""Trains an implicit-feedback ALS model in Spark MLlib on the real
-RetailRocket clickstream dataset, evaluates Precision@10 on a held-out
-split, and writes the model plus precomputed top-10-per-user recs to HDFS.
-
-The batch layer's recommender -- trained offline on full history, unlike
-recommendation-service's always-current but Kafka-since-restart-only
-in-memory engine.
-
-RetailRocket events are implicit feedback, not ratings, so
-implicitPrefs=True: event weight becomes ALS's confidence input, not a
-predicted score. Same weighting as the rest of the project (view=1,
-add_to_cart=3, purchase=5) for consistency.
+"""Trains an implicit-feedback ALS model on the RetailRocket dataset,
+evaluates Precision@10, and writes the model and top-10 recommendations
+to HDFS.
 """
 import os
 

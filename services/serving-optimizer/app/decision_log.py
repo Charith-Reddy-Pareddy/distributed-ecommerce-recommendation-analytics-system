@@ -1,8 +1,4 @@
-"""Audit log of every autonomous decision this service makes, across all
-three tuners. Deliberately its own database (optimizer_db) rather than a
-table bolted onto user_db/analytics_db -- this service observes and acts
-on those databases, it shouldn't also own bookkeeping data inside them.
-"""
+"""Records every decision the tuners make to its own Postgres database."""
 import json
 import threading
 
