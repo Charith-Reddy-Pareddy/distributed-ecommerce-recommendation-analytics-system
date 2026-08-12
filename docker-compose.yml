@@ -33,8 +33,7 @@ services:
       retries: 15
       start_period: 20s
 
-  # Product search index
-  # Single-node, security disabled for local dev
+  # Product search index, single-node, security off for local dev
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
     environment:
@@ -51,8 +50,7 @@ services:
       retries: 20
       start_period: 40s
 
-  # Kafka in KRaft mode
-  # Single broker for local development
+  # Kafka in KRaft mode, single broker for local dev
   kafka:
     image: apache/kafka:3.8.1
     environment:
@@ -83,7 +81,6 @@ services:
       retries: 15
       start_period: 30s
 
-  # HDFS: batch layer's raw event store
   # Custom arm64 image -- official Hadoop images are amd64-only
   hdfs-namenode:
     build: ./infra/hadoop
@@ -256,7 +253,7 @@ services:
 
   spark-worker:
     image: apache/spark:3.5.2-python3
-    # pyspark.ml needs numpy on the executors, installed to /tmp (no home dir here)
+    # numpy for pyspark.ml, installed to /tmp (no home dir here)
     command:
       - /bin/bash
       - -c
@@ -279,7 +276,7 @@ services:
       retries: 15
       start_period: 20s
 
-  # Long-running, so it's part of the default `docker compose up`
+  # Long-running, part of the default `docker compose up`
   spark-streaming:
     image: apache/spark:3.5.2-python3
     # Ivy cache under /tmp -- image has no home directory
