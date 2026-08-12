@@ -189,7 +189,13 @@ def run_cycle(last_snapshot: dict, states: dict[tuple, ColumnState]) -> dict:
                 else:
                     index_type = "btree" if any(sql_analyzer.is_range_operator(op) for op in state.operators) else "hash"
                     name = f"auto_idx_{index_type}_{table}_{column}"
-                    if not _index_exists(target_conn, name):
+                    if _index_exists(target_conn, name):
+                        # Already exists -- from an earlier cycle before a
+                        # restart cleared `states`, most likely. Adopt it
+                        # so it's still eligible for stale-index cleanup.
+                        state.index_name = name
+                        state.index_type = index_type
+                    else:
                         state.index_name = _create_index(target_conn, datname, table, column, index_type)
                         state.index_type = index_type
 
@@ -202,6 +208,10 @@ def run_cycle(last_snapshot: dict, states: dict[tuple, ColumnState]) -> dict:
                 state.index_name = None
                 state.index_type = None
                 state.recent_calls = 0
+        except Exception as e:
+            # One column's DDL failing (index creation, a table dropped
+            # mid-cycle, etc.) shouldn't stop the rest from being evaluated.
+            print(f"[postgres] error processing {datname}.{table}.{column}: {e}", flush=True)
         finally:
             if target_conn:
                 target_conn.close()
