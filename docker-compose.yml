@@ -18,7 +18,6 @@ services:
       timeout: 5s
       retries: 10
 
-  # product-service's document store
   mongo:
     image: mongo:7
     volumes:
@@ -219,7 +218,6 @@ services:
       hbase-rest:
         condition: service_healthy
 
-  # Time-series demand analytics
   cassandra:
     image: cassandra:5.0
     environment:
