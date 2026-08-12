@@ -55,14 +55,12 @@ def _get_session():
 
 
 def _as_date(value) -> date:
-    # cassandra-driver returns CQL `date` columns as its own cassandra.util.Date
-    # (a days-since-epoch wrapper), not stdlib datetime.date -- .date() converts.
+    # cassandra-driver returns dates as cassandra.util.Date, not datetime.date
     return value.date() if hasattr(value, "date") else value
 
 
 def _recent_partitions(session, days: int = 2) -> set[tuple[int, date]]:
-    # SELECT DISTINCT over partition-key-only columns is a supported,
-    # efficient CQL pattern (partition summary scan, not a full data scan).
+    # DISTINCT on partition-key columns only -- a partition scan, not a full scan
     rows = session.execute(f"SELECT DISTINCT product_id, bucket_date FROM {MINUTE_TABLE}")
     cutoff = date.today() - timedelta(days=days)
     return {(r.product_id, _as_date(r.bucket_date)) for r in rows if _as_date(r.bucket_date) >= cutoff}

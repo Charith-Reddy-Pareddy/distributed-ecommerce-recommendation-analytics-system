@@ -39,12 +39,7 @@ class ColumnState:
 
 
 def _fetch_statement_deltas(conn, last_snapshot: dict) -> tuple[dict, dict]:
-    """Returns (rows, updated_snapshot). Each row is
-    (datname, query, delta_calls). Negative deltas (counter resets --
-    server restart, someone else calling pg_stat_statements_reset(), or
-    LRU eviction/recreation of an entry) are clamped to 0 for this cycle
-    rather than corrupting the threshold logic.
-    """
+    """Return statement call deltas and the updated snapshot."""
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -63,7 +58,7 @@ def _fetch_statement_deltas(conn, last_snapshot: dict) -> tuple[dict, dict]:
         previous = last_snapshot.get(queryid)
         delta = 0 if previous is None else calls - previous
         if delta < 0:
-            delta = 0
+            delta = 0  # counter reset (e.g. restart) -- don't treat as a spike
         new_snapshot[queryid] = calls
         rows.append((datname, query, delta))
     return rows, new_snapshot
@@ -207,11 +202,7 @@ def run_cycle(last_snapshot: dict, states: dict[tuple, ColumnState]) -> dict:
 
 
 def _guess_table(query: str, stype: str) -> str | None:
-    """Best-effort single-table name for the write-ratio guard's table-
-    level aggregation. Every query in this codebase touches exactly one
-    table (no joins), so `FROM <table>` / `INTO <table>` / `UPDATE <table>`
-    covers the real query mix.
-    """
+    """Best-effort single-table name (this codebase has no joins)."""
     tokens = query.replace("\n", " ").split()
     markers = {"select": "FROM", "insert": "INTO", "update": "UPDATE", "delete": "FROM"}
     marker = markers.get(stype)

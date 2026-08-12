@@ -16,16 +16,9 @@ RANGE_OPERATORS = {"<", ">", "<=", ">=", "!=", "<>", "LIKE", "ILIKE", "BETWEEN",
 
 
 def statement_type(query: str) -> str:
-    """Returns 'select' | 'insert' | 'update' | 'delete' | 'other', based on
-    the statement's leading keyword -- not substring search. Substring
-    search would misclassify an upsert like:
-
-        INSERT INTO product_stats (...) VALUES (...)
-        ON CONFLICT (product_id) DO UPDATE SET views = product_stats.views + $1
-
-    which contains both "INSERT" and "UPDATE" as substrings and would be
-    double-counted by a naive `"UPDATE" in text` check.
-    """
+    """Return the leading SQL statement type."""
+    # Use the leading DML token so INSERT ... ON CONFLICT DO UPDATE
+    # is still classified as INSERT.
     parsed = sqlparse.parse(query)
     if not parsed:
         return "other"
@@ -37,10 +30,7 @@ def statement_type(query: str) -> str:
 
 
 def extract_predicates(query: str) -> list[tuple[str, str, str]]:
-    """Returns [(table, column, operator), ...] for every `table.column OP
-    $N` comparison found in the query's WHERE clause. Operator is
-    normalized to uppercase with whitespace collapsed (e.g. "NOT LIKE").
-    """
+    """Return (table, column, operator) predicates from the WHERE clause."""
     if statement_type(query) != "select":
         return []
 
