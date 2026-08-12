@@ -9,11 +9,8 @@ from .search_client import ensure_index, index_product, search_products
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await ensure_index()
-    # Self-healing backfill: Elasticsearch has no persistent volume here
-    # (its data is a derived index, not a source of truth), so on every
-    # restart it starts empty and needs repopulating from MongoDB, the
-    # actual source of truth. Also covers products that existed before
-    # this index did.
+    # ES has no persistent volume, so every restart needs repopulating
+    # from MongoDB, the actual source of truth.
     products = await crud.list_products(skip=0, limit=10_000)
     for product in products:
         await index_product(product)

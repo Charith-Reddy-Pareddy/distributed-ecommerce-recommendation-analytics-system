@@ -1,11 +1,8 @@
 services:
   postgres:
     image: postgres:16-alpine
-    # shared_preload_libraries=pg_stat_statements is required for
-    # serving-optimizer's Postgres tuner: it reads pre-aggregated
-    # per-query call counts/timings straight from the source rather than
-    # tailing logs. pg_stat_statements ships in the stock image already
-    # (standard contrib module), so no custom image is needed here.
+    # Lets serving-optimizer read pre-aggregated query stats from
+    # pg_stat_statements instead of tailing logs. Ships in the stock image.
     command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements"]
     environment:
       POSTGRES_USER: postgres
@@ -22,9 +19,8 @@ services:
       timeout: 5s
       retries: 10
 
-  # product-service's store -- richer, variable-shape product documents
-  # (nested specifications, images, geo location) fit MongoDB's document
-  # model more naturally than a flat SQL row.
+  # product-service's store -- variable-shape product documents fit
+  # MongoDB better than a flat SQL row.
   mongo:
     image: mongo:7
     volumes:
@@ -39,12 +35,8 @@ services:
       retries: 15
       start_period: 20s
 
-  # Full-text + geo-filtered product search. Security disabled
-  # (xpack.security.enabled=false) -- a reasonable simplification for a
-  # local single-node demo with no external exposure, not something
-  # you'd do in production. Single node, so replicas would just sit
-  # unassigned forever; product-service's indexing code sets
-  # number_of_replicas=0 on the index for this reason.
+  # Full-text + geo-filtered product search. Security disabled for this
+  # local demo; single-node, so the index sets number_of_replicas=0.
   elasticsearch:
     image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
     environment:
@@ -53,9 +45,7 @@ services:
       ES_JAVA_OPTS: -Xms512m -Xmx512m
     ports:
       - "9200:9200"
-    # Bumped from 1024m: observed sitting at ~1017MiB/1024MiB (99%) under
-    # normal load -- a 512m JVM heap needs real headroom above it for
-    # off-heap Lucene segment/file-cache memory, not just the heap itself.
+    # Bumped from 1024m: was sitting at ~99% under normal load.
     mem_limit: 1536m
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health > /dev/null"]
@@ -64,13 +54,8 @@ services:
       retries: 20
       start_period: 40s
 
-  # Kafka in KRaft mode -- no separate Zookeeper container. Zookeeper is being
-  # phased out of Kafka itself (KRaft has been the recommended mode since
-  # Kafka 3.3+); skipping it also saves real memory in our resource budget.
-  # Uses the official apache/kafka image (published by the Kafka project
-  # itself since 3.7) rather than a third-party distribution.
-  # Two listeners: INTERNAL for other containers, EXTERNAL for host tools
-  # (e.g. the load-test script) connecting via localhost:9094.
+  # KRaft mode, no Zookeeper (phased out since Kafka 3.3+). INTERNAL
+  # listener for containers, EXTERNAL for host tools on localhost:9094.
   kafka:
     image: apache/kafka:3.8.1
     environment:
@@ -84,10 +69,8 @@ services:
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
       KAFKA_NUM_PARTITIONS: "3"
-      # Single-broker cluster: internal topics default to replication
-      # factor 3, which can never be satisfied with one broker -- that
-      # silently stalls the consumer-group coordinator (every consumer
-      # hangs forever with no partitions assigned). Pin them to 1.
+      # Single broker: internal topics default to replication factor 3,
+      # which stalls the consumer-group coordinator forever. Pin to 1.
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: "1"
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: "1"
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: "1"
@@ -104,11 +87,8 @@ services:
       retries: 15
       start_period: 30s
 
-  # HDFS -- the batch layer's raw event store. Built from a custom image
-  # (infra/hadoop) rather than a stock Hadoop image: both apache/hadoop and
-  # the popular bde2020/hadoop-* images are amd64-only, which means Rosetta
-  # emulation on Apple Silicon. Hadoop's JARs are architecture-neutral, so
-  # building on a native-arm64 JDK base avoids emulation entirely.
+  # HDFS -- the batch layer's raw event store. Custom arm64 image
+  # (infra/hadoop); the official Hadoop images are amd64-only.
   hdfs-namenode:
     build: ./infra/hadoop
     command: ["/entrypoint-namenode.sh"]
@@ -144,11 +124,8 @@ services:
       retries: 20
       start_period: 30s
 
-  # Consumes the same Kafka `events` topic as recommendation-service and
-  # analytics-service, but with a persistent (committed-offset) consumer
-  # group -- unlike those two, this one must NOT replay from the beginning
-  # on every restart, since it's writing an append-only archive to HDFS and
-  # replaying would duplicate every batch already written.
+  # Persistent consumer group, not a fresh one per restart -- this writes
+  # an append-only HDFS archive, and replaying would duplicate batches.
   hdfs-sink:
     build: ./services/hdfs-sink
     environment:
@@ -161,12 +138,8 @@ services:
       hdfs-datanode:
         condition: service_healthy
 
-  # A batch job, not a service -- it runs once and exits, so it's kept out
-  # of `docker compose up` (profile "jobs") and invoked on demand with
-  # `docker compose --profile jobs run --rm mapreduce-product-popularity`.
-  # Reuses the hdfs-namenode/datanode image (same Hadoop install, same
-  # client tools) rather than duplicating the ~450MB Hadoop download in a
-  # separate image; the actual job code is mounted in as a volume.
+  # One-shot job, kept out of `docker compose up` (profile "jobs").
+  # Reuses the Hadoop image rather than duplicating the ~450MB download.
   mapreduce-product-popularity:
     build: ./infra/hadoop
     profiles: ["jobs"]
@@ -174,22 +147,14 @@ services:
     volumes:
       - ./jobs/product-popularity:/job
 
-  # HBase's serving layer -- low-latency point lookups for the ALS
-  # recommendations precomputed in HDFS, and (eventually) any other
-  # user-item data that benefits from key-value access instead of a
-  # full Spark job. Storage is real HDFS (hbase.rootdir points at the
-  # namenode above), not HBase's local-disk standalone mode.
-  #
-  # HBase still requires ZooKeeper for master election / region
-  # coordination -- unlike Kafka, there's no KRaft-equivalent for it.
-  # The official zookeeper image does publish native arm64 builds.
+  # HBase's serving layer for low-latency ALS lookups, backed by real
+  # HDFS storage, not standalone mode. Still needs ZooKeeper for master
+  # election -- no KRaft-equivalent for HBase.
   zookeeper:
     image: zookeeper:3.9
     environment:
-      # Recent ZooKeeper versions disable most 4-letter-word admin
-      # commands by default for security -- only "srvr" is enabled out
-      # of the box, so a healthcheck relying on the classic "ruok" probe
-      # silently fails forever unless it's explicitly whitelisted.
+      # Recent ZooKeeper disables most 4lw commands by default; "ruok"
+      # needs an explicit whitelist or the healthcheck fails forever.
       ZOO_4LW_COMMANDS_WHITELIST: ruok,srvr,stat
     ports:
       - "2181:2181"
@@ -237,9 +202,8 @@ services:
       retries: 20
       start_period: 30s
 
-  # HTTP interface onto HBase (the "Stargate" REST server bundled with
-  # HBase itself) -- lets recommendation-service query HBase over plain
-  # HTTP instead of needing a JVM/Thrift client from a Python service.
+  # HBase's REST server (Stargate) -- lets recommendation-service query
+  # HBase over plain HTTP instead of a JVM/Thrift client.
   hbase-rest:
     build: ./infra/hbase
     command: ["/entrypoint-rest.sh"]
@@ -256,10 +220,8 @@ services:
       retries: 20
       start_period: 30s
 
-  # One-shot job -- loads the ALS recommendations already computed and
-  # sitting in HDFS (see als-training above) into HBase for low-latency
-  # point lookups. Kept out of `docker compose up` behind the "jobs"
-  # profile, same as the other batch jobs.
+  # One-shot job: loads ALS recs from HDFS into HBase. Kept out of
+  # `docker compose up` behind the "jobs" profile.
   hbase-load-recommendations:
     build: ./services/hbase-loader
     profiles: ["jobs"]
@@ -270,13 +232,9 @@ services:
       hbase-rest:
         condition: service_healthy
 
-  # Time-series demand store. The Spark Structured Streaming job (below)
-  # writes the same per-product, per-minute window counts it already
-  # computes for Z-score anomaly detection into here too -- one
-  # computation, two consumers. Cassandra's partition-per-day design
-  # (see the schema the job creates) is the standard pattern for
-  # high-write-throughput time-series data, as opposed to Postgres'
-  # row-per-event style used elsewhere in this project.
+  # Reuses the per-minute counts already computed for anomaly detection.
+  # Partition-per-day is the standard time-series pattern here, vs.
+  # Postgres' row-per-event style elsewhere in this project.
   cassandra:
     image: cassandra:5.0
     environment:
@@ -285,9 +243,7 @@ services:
       CASSANDRA_CLUSTER_NAME: ecommerce-cluster
     ports:
       - "9042:9042"
-    # Bumped from 1024m: observed sitting at ~989MiB/1024MiB (96%) under
-    # normal load. Heap is 512m+128m newsize, but Cassandra needs real
-    # off-heap headroom for memtables, bloom filters, and compaction.
+    # Bumped from 1024m: was sitting at ~96% under normal load.
     mem_limit: 1536m
     healthcheck:
       test: ["CMD-SHELL", "cqlsh -e 'describe cluster' > /dev/null"]
@@ -296,9 +252,7 @@ services:
       retries: 20
       start_period: 60s
 
-  # Spark standalone cluster (the speed layer's compute engine) -- the
-  # official apache/spark image supports native arm64, unlike the Hadoop
-  # images, so no custom build needed here.
+  # apache/spark publishes native arm64 builds, unlike the Hadoop images.
   spark-master:
     image: apache/spark:3.5.2-python3
     command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master"]
@@ -316,13 +270,10 @@ services:
 
   spark-worker:
     image: apache/spark:3.5.2-python3
-    # numpy isn't bundled in this image, but pyspark.ml (used by the ALS
-    # training job) requires it -- and since Standalone-mode executors run
-    # as child processes of this container's Worker JVM (not inside the
-    # driver's own container), numpy has to be installed *here*, not just
-    # wherever spark-submit runs. Installed to /tmp (not the nonexistent
-    # home directory) and put on PYTHONPATH so spawned executor processes,
-    # which inherit their parent's environment, can import it too.
+    # pyspark.ml needs numpy, but executors run inside this container
+    # (not the driver's), so it has to be installed here too, not just
+    # wherever spark-submit runs. Installed to /tmp since there's no
+    # home directory for pip's default install target.
     command:
       - /bin/bash
       - -c
@@ -330,27 +281,13 @@ services:
         pip3 install --target=/tmp/pylibs numpy &&
         exec /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
     environment:
-      # 4, not 2: Spark Standalone gives an application ALL available
-      # worker cores by default unless it caps itself with
-      # spark.cores.max. The always-on spark-streaming job grabbed both
-      # cores on a 2-core worker and never released them, permanently
-      # starving any batch job (als-training, and eventually the
-      # MapReduce-adjacent jobs) submitted afterward -- discovered when
-      # als-training sat in Spark's WAITING state indefinitely. Now
-      # spark-streaming is explicitly capped (see below) so batch jobs
-      # always have cores left to run on.
+      # 4, not 2: an uncapped streaming job took both cores on a 2-core
+      # worker and starved every batch job submitted after it.
+      # spark-streaming is now explicitly capped (see below).
       SPARK_WORKER_CORES: "4"
-      # 2g for everyday operation (streaming only needs ~1g). The one-shot
-      # als-training job needed 5g (its 2.5g executor plus streaming's
-      # permanent 1g left too little free memory for both to run at once
-      # -- Spark Standalone needs cores AND memory free simultaneously,
-      # discovered when als-training sat WAITING despite having free
-      # cores). That was a temporary bump for that specific job, not a
-      # standing requirement -- as more memory-hungry services (Cassandra,
-      # MongoDB, Elasticsearch) join the default `docker compose up`
-      # footprint, keeping this at its actual day-to-day need matters more
-      # than it did early on. Bump back to 5g (SPARK_WORKER_MEMORY and
-      # mem_limit both) if you need to rerun ALS training.
+      # 2g for normal operation; bump to 5g (with mem_limit) only if
+      # rerunning ALS training, which needs more headroom alongside
+      # streaming than day-to-day operation does.
       SPARK_WORKER_MEMORY: 2g
       PYTHONPATH: /tmp/pylibs
     mem_limit: 2500m
@@ -364,26 +301,14 @@ services:
       retries: 15
       start_period: 20s
 
-  # The speed layer itself: a long-running Structured Streaming job (not a
-  # one-shot batch job like the MapReduce popularity job), so it's part of
-  # the default `docker compose up`, not the "jobs" profile.
+  # Long-running, so it's part of the default `docker compose up`, not
+  # the "jobs" profile like the batch jobs.
   spark-streaming:
     image: apache/spark:3.5.2-python3
-    # Ivy's package cache lives in plain container storage under /tmp (not a
-    # named volume, and not Ivy's default ~/.ivy2 -- this image's "spark"
-    # user has no home directory at all). /tmp is world-writable by
-    # default, whereas a named volume mounted there would be created
-    # root-owned and unwritable by the non-root "spark" user this image
-    # runs as. Trade-off: the ~20MB Kafka connector jars re-download on
-    # every container restart rather than being cached -- fine for a demo.
-    # Ivy also doesn't reliably create its own cache/jars subdirectories,
-    # so they're created explicitly first. Also installs cassandra-driver
-    # to the same ephemeral /tmp location as numpy elsewhere in this
-    # project (this image's "spark" user has no home directory, so pip's
-    # default install target isn't writable). Command (not entrypoint) is
-    # overridden so the image's own /opt/entrypoint.sh still runs first
-    # (JAVA_HOME/classpath setup) and passes this through via its
-    # pass-through case.
+    # Ivy cache lives under /tmp, not a named volume or ~/.ivy2 -- this
+    # image's "spark" user has no home directory, and /tmp is the only
+    # writable option. Connector jars re-download on every restart as a
+    # result, fine for a demo. cassandra-driver is installed the same way.
     command:
       - /bin/bash
       - -c
@@ -402,17 +327,11 @@ services:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       HDFS_URI: hdfs://hdfs-namenode:9000
       CASSANDRA_HOST: cassandra
-      # SESSION_GAP/SESSION_WATERMARK intentionally omitted here -- the
-      # job's own defaults (5 minutes / 10 minutes, realistic session
-      # semantics) apply. Override with shorter values only for fast
-      # local verification, e.g.: SESSION_GAP="30 seconds" SESSION_WATERMARK="1 minute"
+      # SESSION_GAP/SESSION_WATERMARK omitted -- the job's own realistic
+      # defaults apply unless overridden for faster local testing.
     volumes:
       - ./jobs/spark-streaming:/job
-    # Bumped from 768m: observed batches taking 30-40s against a 30s
-    # trigger interval (driver JVM sitting near this cap, not CPU
-    # contention -- docker stats showed the whole stack idle at the time)
-    # while running two streaming queries plus a growing running_stats
-    # dict, well past the state this project had when 768m was set.
+    # Bumped from 768m: batches were taking 30-40s against a 30s trigger.
     mem_limit: 1280m
     depends_on:
       spark-worker:
@@ -424,15 +343,12 @@ services:
       cassandra:
         condition: service_healthy
 
-  # Batch job (train-once, not a daemon) -- kept out of `docker compose up`
-  # behind the "jobs" profile, same as mapreduce-product-popularity.
+  # One-shot, kept behind the "jobs" profile like the MapReduce job.
   # Trains ALS on the RetailRocket dataset already loaded into HDFS.
   als-training:
     image: apache/spark:3.5.2-python3
     profiles: ["jobs"]
-    # No Kafka involved here (reads straight from HDFS), so no --packages
-    # / Ivy cache needed -- just numpy for the driver side of pyspark.ml,
-    # same reasoning and same /tmp workaround as spark-worker above.
+    # No Kafka here, so just numpy -- same /tmp workaround as spark-worker.
     command:
       - /bin/bash
       - -c
@@ -500,9 +416,7 @@ services:
       HBASE_REST_URL: http://hbase-rest:8080
     ports:
       - "8004:8000"
-    # A bit more than the other FastAPI services: holds the item-item
-    # similarity model in memory, rebuilt by replaying the full Kafka
-    # topic on every restart.
+    # A bit more than the other services: holds the similarity model in memory.
     mem_limit: 512m
     depends_on:
       kafka:
@@ -531,16 +445,11 @@ services:
       cassandra:
         condition: service_healthy
 
-  # Autonomous tuner for the serving layer: watches real Postgres query
-  # patterns (pg_stat_statements), real per-product Cassandra demand
-  # volume (the existing product_demand_by_minute table), and real
-  # Elasticsearch indexing load (_stats), then actually creates/drops
-  # indexes, classifies hot/cold products, and adjusts refresh_interval
-  # -- inspired by github.com/nimit-pasricha/auto-indexing, extended
-  # across three stores instead of one (see README.md for the concrete
-  # differences). Independent of every other service: polls existing
-  # data rather than joining the Kafka/Spark pipeline, so a bug here
-  # cannot affect any already-verified service.
+  # Watches real Postgres/Cassandra/Elasticsearch usage and acts on it --
+  # creates/drops indexes, classifies hot/cold products, tunes
+  # refresh_interval. Inspired by nimit-pasricha/auto-indexing, extended
+  # to three stores (see README). Polls existing data independently, so
+  # a bug here can't affect any other service.
   serving-optimizer:
     build: ./services/serving-optimizer
     environment:
@@ -559,11 +468,8 @@ services:
       elasticsearch:
         condition: service_healthy
 
-  # Single web interface tying together the three serving-layer pieces
-  # built earlier: Elasticsearch product search, Cassandra-backed live
-  # demand data, and HBase-backed ALS recommendations. A thin
-  # server-side proxy over those three services -- the browser only
-  # ever talks to this, never directly to the backend services.
+  # Thin server-side proxy tying the serving-layer pieces together -- the
+  # browser only talks to Flask, never the backend services directly.
   dashboard:
     build: ./services/dashboard
     environment:

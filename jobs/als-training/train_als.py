@@ -25,12 +25,10 @@ RECS_OUTPUT_PATH = f"{HDFS_URI}/output/als-recommendations"
 
 EVENT_WEIGHTS = {"view": 1.0, "addtocart": 3.0, "transaction": 5.0}
 TOP_K = 10
-# RetailRocket is extremely sparse: median interactions/user is 1 across
-# ~1.4M users and ~235K items (verified from raw CSV). Precision@K on
-# users with 1-2 interactions is near-meaningless -- one held-out item
-# out of 235K candidates is mostly noise, not model quality. Restricting
-# eval to users with enough history (k-core filtering, standard practice)
-# fixes this; all interactions still count toward *training* regardless.
+# RetailRocket is extremely sparse (median 1 interaction/user), so
+# evaluating on users with too little history is mostly noise. Eval is
+# restricted to users with enough interactions (k-core filtering);
+# training still uses everyone.
 MIN_INTERACTIONS_FOR_EVAL = 5
 
 EVENTS_SCHEMA = StructType(
@@ -63,10 +61,8 @@ def load_interactions(spark: SparkSession):
 def precision_at_k(model, train_df, test_df, k: int = TOP_K):
     test_users = test_df.select("visitorid").distinct()
 
-    # Ask for more than k so there's room to drop items the user already
-    # saw in training before taking the final top-k -- ALS's own
-    # recommendForUserSubset ranks over the whole catalog and doesn't know
-    # to exclude "already interacted with" on its own.
+    # Ask for more than k -- ALS doesn't exclude already-seen items, so we
+    # need room to drop those before taking the final top-k.
     raw_recs = model.recommendForUserSubset(test_users, k * 3)
     exploded = raw_recs.selectExpr("visitorid", "explode(recommendations) as rec").select(
         "visitorid", col("rec.itemid").alias("itemid"), col("rec.rating").alias("score")
@@ -106,9 +102,7 @@ def main() -> None:
     total_interactions = interactions.count()
     print(f"[ALS] Total distinct (user, item) interactions: {total_interactions}", flush=True)
 
-    # Only evaluate on users with enough history for a meaningful
-    # train/test split -- a user with a single interaction can't have
-    # both a train example and a test example.
+    # Only users with enough history can have both a train and test example.
     user_counts = interactions.groupBy("visitorid").agg(count("*").alias("n"))
     eligible_users = user_counts.filter(col("n") >= MIN_INTERACTIONS_FOR_EVAL).select("visitorid")
     eligible_interactions = interactions.join(eligible_users, on="visitorid", how="inner")
@@ -148,11 +142,8 @@ def main() -> None:
     model.write().overwrite().save(MODEL_OUTPUT_PATH)
     print(f"[ALS] Model saved to {MODEL_OUTPUT_PATH}", flush=True)
 
-    # Precompute for "active" users only (same >=5-interaction threshold as
-    # eval), not all ~1.4M -- most users have exactly 1 interaction with no
-    # real signal to recommend from, and running this over everyone took
-    # over an hour without finishing. A real system would compute on-demand
-    # for infrequent users instead of precomputing for everyone.
+    # Precompute for active users only -- most users have 1 interaction and
+    # no real signal, and running this for everyone took over an hour.
     active_users = eligible_users
     all_recs = model.recommendForUserSubset(active_users, TOP_K)
     output = all_recs.selectExpr("visitorid", "explode(recommendations) as rec").select(

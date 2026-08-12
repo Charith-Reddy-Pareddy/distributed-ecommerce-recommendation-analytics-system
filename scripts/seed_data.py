@@ -25,10 +25,8 @@ EVENT_SERVICE = "http://localhost:8003"
 
 AMAZON_PRODUCTS_PATH = Path(__file__).resolve().parent.parent / "data" / "amazon_products.json"
 
-# Warehouse/seller locations (real city coordinates, [lon, lat]) -- lets
-# the geo-filtered search have something real to filter on. The Amazon
-# dataset itself has no warehouse/seller geo data, so each product gets
-# assigned one of these on seed.
+# Real city coordinates, [lon, lat] -- the Amazon dataset has no
+# warehouse geo data, so each product gets one of these assigned on seed.
 WAREHOUSES = {
     "New York": (-74.006, 40.7128),
     "Los Angeles": (-118.2437, 34.0522),

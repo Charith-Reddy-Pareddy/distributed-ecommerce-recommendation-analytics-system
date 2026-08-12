@@ -63,9 +63,8 @@ def summary(db: Session = Depends(get_db)):
     ]
 
 
-# Time-series demand data (Cassandra), distinct from the Postgres-backed
-# endpoints above -- per-minute granularity, written live by the Spark
-# Structured Streaming job.
+# Cassandra-backed, unlike the Postgres endpoints above -- written live
+# by the Spark Streaming job.
 @app.get("/analytics/demand-timeseries/{product_id}")
 def demand_timeseries(product_id: int, days: int = 1):
     return {

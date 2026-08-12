@@ -2,11 +2,8 @@ from pydantic import BaseModel, Field
 
 
 class GeoPoint(BaseModel):
-    """GeoJSON Point -- [longitude, latitude], matching both MongoDB's
-    and Elasticsearch's geo field conventions, so the same coordinates
-    seeded here work unchanged for the geo-filtered search added in
-    Elasticsearch later.
-    """
+    """GeoJSON Point -- [longitude, latitude], the shape both MongoDB and
+    Elasticsearch expect for geo queries."""
 
     type: str = "Point"
     coordinates: tuple[float, float]
@@ -22,18 +19,14 @@ class ProductBase(BaseModel):
     category: str
     price: float
     description: str = ""
-    # The "enriched" part of "enriched product information": nested,
-    # variable-shape data that's awkward in a flat SQL row but natural
-    # as a MongoDB document.
+    # Nested, variable-shape data -- natural in MongoDB, awkward in SQL.
     tags: list[str] = Field(default_factory=list)
     specifications: dict[str, str] = Field(default_factory=dict)
     images: list[str] = Field(default_factory=list)
     location: GeoPoint | None = None
     rating: Rating = Field(default_factory=Rating)
-    # Real Amazon Standard Identification Number, when the product was
-    # sourced from real Amazon catalog data (see README) -- lets the
-    # dashboard link to an actual Amazon product page instead of a
-    # generic search fallback.
+    # Real ASIN when sourced from Amazon data -- lets the dashboard link
+    # to the actual product page.
     asin: str | None = None
 
 

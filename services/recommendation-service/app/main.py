@@ -56,9 +56,8 @@ async def popular(n: int = 10):
     return {"popular_products": await _enrich_with_products(scored)}
 
 
-# Batch-layer recommendations (Spark MLlib ALS, trained offline on the
-# RetailRocket dataset, served from HBase for low-latency lookups) --
-# a different id space than the demo catalog, see hbase_client.py.
+# Batch-layer ALS recs from HBase -- a different id space than the
+# demo catalog, see hbase_client.py.
 @app.get("/recommendations/precomputed/{visitor_id}")
 async def precomputed(visitor_id: int):
     recs = await get_precomputed_recommendations(visitor_id)

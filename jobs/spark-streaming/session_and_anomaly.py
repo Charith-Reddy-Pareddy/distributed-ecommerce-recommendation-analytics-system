@@ -22,12 +22,8 @@ from cassandra_writer import write_demand_count
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 HDFS_URI = os.getenv("HDFS_URI", "hdfs://hdfs-namenode:9000")
 Z_SCORE_THRESHOLD = float(os.getenv("Z_SCORE_THRESHOLD", "2.5"))
-# Real session semantics: a 5-minute gap of inactivity ends a session, and
-# HDFS output only appears once the watermark confirms a session is closed
-# (won't receive any more late events). Both overridable for faster local
-# verification -- e.g. SESSION_GAP=30 seconds, SESSION_WATERMARK=1 minute
-# lets you see session output in under two minutes instead of waiting
-# ~15 minutes for realistic durations to elapse.
+# A 5-minute inactivity gap ends a session; override both for faster
+# local testing instead of waiting ~15 minutes for realistic durations.
 SESSION_GAP = os.getenv("SESSION_GAP", "5 minutes")
 SESSION_WATERMARK = os.getenv("SESSION_WATERMARK", "10 minutes")
 
@@ -48,12 +44,8 @@ def build_events_stream(spark: SparkSession):
         .option("kafka.bootstrap.servers", KAFKA_BOOTSTRAP_SERVERS)
         .option("subscribe", "events")
         .option("startingOffsets", "latest")
-        # The `events` topic gets deleted and recreated during this
-        # project's own data-reset workflows (see README/serving-optimizer
-        # notes on cleaning up stale demo data), which resets offsets to 0.
-        # Without this, Spark's Kafka source treats that discontinuity as
-        # fatal data loss and kills the whole query -- correct default for
-        # a topic that shouldn't normally be recreated, wrong for this one.
+        # The topic sometimes gets deleted and recreated during resets,
+        # which Spark's Kafka source otherwise treats as fatal data loss.
         .option("failOnDataLoss", "false")
         .load()
     )
@@ -92,11 +84,9 @@ def run_anomaly_detection(events):
         .agg(count("*").alias("event_count"))
     )
 
-    # Welford's online algorithm: running (count, mean, sum-of-squared-
-    # deviations) per product, updated one micro-batch at a time. This
-    # is driver-local state -- fine for a single-instance demo job, but
-    # would need an external store (e.g. the Cassandra layer being added
-    # next) to survive a driver restart in a real deployment.
+    # Welford's online algorithm for running mean/variance per product.
+    # Driver-local state -- fine here, but wouldn't survive a driver
+    # restart in production.
     running_stats: dict[int, tuple[int, float, float]] = {}
 
     def process_batch(batch_df, batch_id):
