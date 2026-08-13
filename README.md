@@ -1,15 +1,15 @@
 # Distributed E-Commerce Recommendation Analytics System
 
-A Lambda Architecture pipeline built with Python, Kafka, and Spark
-that turns e-commerce clickstream events into real-time
-recommendations, rolling analytics, a batch pipeline, and a serving
-layer that tunes itself.
+A demo e-commerce backend that turns ordinary shopping activity --
+browsing, adding to cart, buying -- into real-time product
+recommendations, live analytics, and a backend that tunes its own
+databases as traffic changes.
 
-One Kafka topic (`events`) is the only thing every service shares.
-Four consumers -- a real-time recommender, an analytics aggregator,
-an HDFS archiver, and a Spark Structured Streaming job -- read it
-independently and each build their own read model, with no shared
-database anywhere in the system.
+It's built as a Lambda Architecture: every event flows through one
+Kafka stream, and independent services -- a real-time recommender, an
+analytics aggregator, a batch ML pipeline, and a stream processor --
+each read that same stream and build their own view of the data, with
+no shared database between them.
 
 ## Architecture
 
