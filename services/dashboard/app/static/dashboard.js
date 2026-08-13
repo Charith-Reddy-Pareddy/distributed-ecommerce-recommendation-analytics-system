@@ -103,48 +103,6 @@ document.getElementById("geo-search-btn").addEventListener("click", () => {
   runSearch({ ...currentSearchParams(), lat, lon, radius_km });
 });
 
-// --- Live demand chart -------------------------------------------------
-
-let demandChart = null;
-let demandPollHandle = null;
-
-function getOrCreateChart() {
-  if (demandChart) return demandChart;
-  const ctx = document.getElementById("demand-chart");
-  demandChart = new Chart(ctx, {
-    type: "line",
-    data: { labels: [], datasets: [{ label: "Events / minute", data: [], borderColor: "#5b8cff", tension: 0.25 }] },
-    options: {
-      responsive: true,
-      scales: { x: { ticks: { color: "#9aa4b8" } }, y: { beginAtZero: true, ticks: { color: "#9aa4b8" } } },
-      plugins: { legend: { labels: { color: "#e6e9ef" } } },
-    },
-  });
-  return demandChart;
-}
-
-async function refreshDemand(productId) {
-  const statusEl = document.getElementById("demand-status");
-  try {
-    const data = await getJSON(`/api/demand/${productId}?days=1`);
-    const points = (data.points || []).slice().reverse();
-    const chart = getOrCreateChart();
-    chart.data.labels = points.map((p) => p.event_minute.slice(11, 16));
-    chart.data.datasets[0].data = points.map((p) => p.event_count);
-    chart.update();
-    statusEl.textContent = `Last updated ${new Date().toLocaleTimeString()} (${points.length} points)`;
-  } catch (err) {
-    statusEl.textContent = "Error fetching demand data";
-  }
-}
-
-document.getElementById("demand-watch-btn").addEventListener("click", () => {
-  const productId = document.getElementById("demand-product-id").value;
-  if (demandPollHandle) clearInterval(demandPollHandle);
-  refreshDemand(productId);
-  demandPollHandle = setInterval(() => refreshDemand(productId), 5000);
-});
-
 // --- Recommendations -----------------------------------------------------
 
 async function lookupRecommendations(visitorId) {
@@ -307,7 +265,6 @@ let tuningPollHandle = null;
 
 // Initial load
 runSearch({});
-refreshDemand(document.getElementById("demand-product-id").value);
 lookupRecommendations(document.getElementById("rec-visitor-id").value);
 refreshTopProducts();
 refreshEventSummary();

@@ -298,8 +298,6 @@ Flask, never directly to the backend services.
   Amazon** link built from each product's ASIN.
 - **Top Products** and **Event Volume by Day** — Chart.js panels fed
   by `analytics-service`'s SQL aggregates.
-- **Live Demand** — a polling Chart.js line chart backed by Cassandra,
-  updated in real time by the Spark Streaming job.
 - **Personalized Recommendations** — precomputed ALS recommendations
   served from HBase.
 - **Autonomous Tuning** — a live feed of `serving-optimizer`'s
@@ -475,7 +473,7 @@ every push and pull request.
     ├── hdfs-sink/                # Kafka -> HDFS batching worker
     ├── hbase-loader/             # HDFS -> HBase recommendations loader
     ├── serving-optimizer/        # autonomous Postgres/Cassandra/ES tuner
-    └── dashboard/                # Flask UI: search + live demand + recommendations
+    └── dashboard/                # Flask UI: search, analytics, recommendations
 ```
 
 Each service directory follows the same shape:

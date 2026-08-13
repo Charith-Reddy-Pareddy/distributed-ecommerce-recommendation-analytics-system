@@ -1,5 +1,5 @@
-"""Flask dashboard tying together product search, live demand data,
-and ALS recommendations into one page.
+"""Flask dashboard tying together product search, analytics, and ALS
+recommendations into one page.
 
 A thin proxy: the browser only talks to Flask, which forwards to
 whichever backend service owns the data.
@@ -32,21 +32,6 @@ def search():
     params = {k: v for k, v in request.args.items() if v}
     try:
         resp = requests.get(f"{PRODUCT_SERVICE_URL}/products/search", params=params, timeout=5)
-        resp.raise_for_status()
-        return jsonify(resp.json())
-    except requests.RequestException as e:
-        return jsonify({"error": str(e)}), 502
-
-
-@app.get("/api/demand/<int:product_id>")
-def demand(product_id: int):
-    days = request.args.get("days", "1")
-    try:
-        resp = requests.get(
-            f"{ANALYTICS_SERVICE_URL}/analytics/demand-timeseries/{product_id}",
-            params={"days": days},
-            timeout=5,
-        )
         resp.raise_for_status()
         return jsonify(resp.json())
     except requests.RequestException as e:

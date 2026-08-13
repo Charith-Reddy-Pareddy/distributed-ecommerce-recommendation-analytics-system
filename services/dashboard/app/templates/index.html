@@ -10,8 +10,9 @@
   <header>
     <h1>Distributed E-Commerce Recommendation Analytics System</h1>
     <p class="subtitle">
-      Live view over the serving layer: Elasticsearch search, Cassandra demand data
-      (fed by Spark Structured Streaming), and HBase-served ALS recommendations.
+      Live view over the serving layer: Elasticsearch search, Postgres
+      analytics, autonomous serving-layer tuning, and HBase-served ALS
+      recommendations.
     </p>
   </header>
 
@@ -73,16 +74,6 @@
         <span id="tuning-status" class="status"></span>
       </div>
       <div id="tuning-decisions" class="results"></div>
-    </section>
-
-    <section class="card">
-      <h2>Live Demand <span class="badge">Cassandra / Spark Streaming</span></h2>
-      <div class="controls">
-        <label>Product ID: <input type="number" id="demand-product-id" value="1" min="1"></label>
-        <button type="button" id="demand-watch-btn">Watch</button>
-        <span id="demand-status" class="status"></span>
-      </div>
-      <canvas id="demand-chart" height="120"></canvas>
     </section>
 
     <section class="card">
