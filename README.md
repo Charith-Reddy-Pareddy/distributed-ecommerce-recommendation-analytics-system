@@ -315,10 +315,24 @@ Spark trigger interval:   30s for both streaming queries
 Anomaly detection:        one controlled 60-event/10s burst, flagged at z_score=32.17
 ALS Precision@10:         0.0055 (RetailRocket, ~2.75M events, ~1.4M users)
 HBase point lookup:       ~10ms average over the REST layer
-```markdown
 Product catalog:          300 Amazon products
 ```
 
+## Data sources
+
+Two real, public datasets, used for different parts of the project:
+
+- **[McAuley-Lab/Amazon-Reviews-2023](https://amazon-reviews-2023.github.io/)**
+  — 300 real Amazon products (titles, brands, prices, images, ratings,
+  ASINs) pulled via `scripts/fetch_amazon_products.py` and stored in
+  MongoDB as the demo product catalog.
+- **[RetailRocket e-commerce dataset](https://www.kaggle.com/datasets/retailrocket/ecommerce-dataset)**
+  (Kaggle) — ~2.75M real clickstream events over 4.5 months, used to
+  train the offline ALS recommendation model in `jobs/als-training/`.
+
+These are two separate datasets with two separate item-id spaces --
+see [Serving layer: HBase](#serving-layer-hbase) for what that means
+in practice.
 
 ## Running locally
 
