@@ -10,4 +10,5 @@ venv/
 .vscode/
 pgdata/
 data/retailrocket/*.csv
+data/interactions.parquet
 .claude/
