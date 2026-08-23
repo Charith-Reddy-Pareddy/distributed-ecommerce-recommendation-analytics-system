@@ -5,11 +5,41 @@ browsing, adding to cart, buying -- into real-time product
 recommendations, live analytics, and a backend that tunes its own
 databases as traffic changes.
 
-It's built as a Lambda Architecture: every event flows through one
-Kafka stream, and independent services -- a real-time recommender, an
-analytics aggregator, a batch ML pipeline, and a stream processor --
+It's built as a Lambda-style architecture: every event flows through
+one Kafka stream, and independent services -- a real-time recommender,
+an analytics aggregator, a batch ML pipeline, and a stream processor --
 each read that same stream and build their own view of the data, with
 no shared database between them.
+
+## Research questions
+
+Underneath the systems work, this project is really investigating four
+questions:
+
+- **RQ1** — How does event-weighted implicit feedback (view/cart/
+  purchase weights) affect recommendation quality, compared to
+  alternative weighting schemes?
+- **RQ2** — How does a real-time item-item recommender compare against
+  batch ALS on Precision@K, Recall@K, MAP@K, NDCG@K, latency, and
+  update freshness?
+- **RQ3** — What's the trade-off between recommendation freshness and
+  serving latency, given that this architecture supports both a
+  streaming and a batch path to the same problem?
+- **RQ4** — Can workload-aware database optimization
+  (`serving-optimizer`) reduce serving latency without excessive
+  write/indexing overhead?
+
+**Main contributions**: an event-driven distributed recommendation
+pipeline; a streaming + batch recommendation architecture serving the
+same catalog; workload-aware database optimization as a measured
+experiment rather than a fixed config; and an experimental evaluation
+of recommendation quality and serving performance under this
+architecture.
+
+Answers, methodology, and results live in `experiments/` and
+[docs/RESEARCH_REPORT.md](docs/RESEARCH_REPORT.md) as they're
+completed -- this is ongoing work, not a finished study, and numbers
+only get reported once they've actually been measured.
 
 ## Architecture
 
