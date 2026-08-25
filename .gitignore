@@ -10,5 +10,10 @@ venv/
 .vscode/
 pgdata/
 data/retailrocket/*.csv
-data/interactions.parquet
+data/interactions*.parquet
+experiments/recommendation/catalog_als/model/
+experiments/recommendation/catalog_als/recommendations.parquet
+spark-warehouse/
+derby.log
+metastore_db/
 .claude/
