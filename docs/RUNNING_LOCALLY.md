@@ -83,6 +83,32 @@ docker compose down        # stop containers, keep data
 docker compose down -v     # stop containers and wipe volumes
 ```
 
+## Recommendation experiments
+
+The offline evaluation harness in `experiments/recommendation/` (popularity,
+item-CF, content-based, and catalog-ALS) doesn't need Docker at all -- ALS
+trains in local-mode PySpark instead of the Docker Spark+HDFS cluster.
+Set up a project-local virtualenv once:
+
+```bash
+python3 -m venv .venv
+./.venv/bin/pip install -r tests/requirements.txt -r experiments/requirements.txt
+```
+
+Then generate the synthetic interaction log, split it, and evaluate:
+
+```bash
+./.venv/bin/python scripts/generate_interactions.py
+./.venv/bin/python experiments/recommendation/split_interactions.py
+./.venv/bin/python experiments/recommendation/offline_models.py       # popularity, item-CF, content-based
+./.venv/bin/python experiments/recommendation/catalog_als/train.py    # catalog-native ALS
+```
+
+Results land in `experiments/recommendation/results/offline_models.jsonl`,
+one JSON record per model per run. The existing RetailRocket ALS job
+(`jobs/als-training/`) is unrelated to this and still needs the Docker
+Spark+HDFS stack -- see the RetailRocket steps above.
+
 ## Tests
 
 `tests/` covers pure logic that doesn't need the stack running: the
