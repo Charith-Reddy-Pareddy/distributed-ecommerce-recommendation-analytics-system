@@ -74,6 +74,37 @@ def top_k_unseen(model, train_df, test_users_df, k=TOP_K):
     return recs
 
 
+def train_and_evaluate(spark, train_df, test_df, actuals, als_params=None, k=TOP_K):
+    """Trains ALS on a (user_id, product_id, weight) Spark DataFrame and
+    evaluates it against `actuals` (dict[user_id -> set of held-out items]).
+
+    Shared by main() (the fixed production-weighting split) and the
+    weighting-scheme ablation, which retrains this same way on
+    differently-weighted interactions.
+    """
+    als = ALS(
+        userCol="user_id",
+        itemCol="product_id",
+        ratingCol="weight",
+        implicitPrefs=True,
+        coldStartStrategy="drop",
+        **(als_params or ALS_PARAMS),
+    )
+    model = als.fit(train_df)
+
+    test_users_df = test_df.select("user_id").distinct()
+    n_test_users = test_users_df.count()
+
+    start = time.perf_counter()
+    recs = top_k_unseen(model, train_df, test_users_df, k)
+    elapsed = time.perf_counter() - start
+    latency_ms_per_user = (elapsed / max(n_test_users, 1)) * 1000
+
+    metrics = evaluate(recs, actuals, k=k)
+    result = {**metrics, "latency_ms_per_user": latency_ms_per_user}
+    return model, result, n_test_users
+
+
 def main():
     spark = SparkSession.builder.master("local[*]").appName("catalog-als-training").getOrCreate()
     spark.sparkContext.setLogLevel("WARN")
@@ -83,32 +114,15 @@ def main():
     train_df.cache()
     print(f"[catalog-ALS] Train rows: {train_df.count()}, Test rows: {test_df.count()}", flush=True)
 
-    als = ALS(
-        userCol="user_id",
-        itemCol="product_id",
-        ratingCol="weight",
-        implicitPrefs=True,
-        coldStartStrategy="drop",
-        **ALS_PARAMS,
-    )
-    model = als.fit(train_df)
-    print("[catalog-ALS] Model training complete.", flush=True)
-
-    test_users_df = test_df.select("user_id").distinct()
-    n_test_users = test_users_df.count()
-
-    start = time.perf_counter()
-    recs = top_k_unseen(model, train_df, test_users_df, TOP_K)
-    elapsed = time.perf_counter() - start
-    latency_ms_per_user = (elapsed / max(n_test_users, 1)) * 1000
-
     actuals = load_test_actuals(TEST_PATH)
-    metrics = evaluate(recs, actuals, k=TOP_K)
-    result = {**metrics, "latency_ms_per_user": latency_ms_per_user}
+    model, result, n_test_users = train_and_evaluate(spark, train_df, test_df, actuals)
     print(f"[catalog-ALS] {result}", flush=True)
 
     model.write().overwrite().save(MODEL_OUTPUT_PATH)
     print(f"[catalog-ALS] Model saved to {MODEL_OUTPUT_PATH}", flush=True)
+
+    test_users_df = test_df.select("user_id").distinct()
+    recs = top_k_unseen(model, train_df, test_users_df, TOP_K)
 
     all_recs_df = spark.createDataFrame(
         [(user_id, product_id, rank) for user_id, items in recs.items() for rank, product_id in enumerate(items)],
