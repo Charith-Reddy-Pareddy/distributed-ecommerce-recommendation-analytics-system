@@ -26,9 +26,14 @@ TEST_FRACTION = 0.2
 SEED = 42
 
 
-def weighted_interactions():
-    model = load_app_module("recommendation-service", "model", "recsvc_app")
-    event_weights = model.EVENT_WEIGHTS
+def weighted_interactions(event_weights=None):
+    """event_weights defaults to production's view/cart/purchase weights
+    (services/recommendation-service/app/model.py); pass a different dict
+    to run the same pipeline under an alternative weighting scheme (RQ1).
+    """
+    if event_weights is None:
+        model = load_app_module("recommendation-service", "model", "recsvc_app")
+        event_weights = model.EVENT_WEIGHTS
 
     events = pd.read_parquet(INTERACTIONS_PATH)
     events["weight"] = events["event_type"].map(event_weights)
