@@ -1,9 +1,14 @@
 """Thin client for HBase's REST server (Stargate) -- fetches
 precomputed ALS recommendations for low-latency lookups by user id.
 
-Uses RetailRocket's item ids, a different id space from this
-project's demo catalog, so results can't be enriched via
-product-service.
+Whether the returned item ids match this project's demo catalog depends
+on which model loaded this HBase table: the original RetailRocket job
+(jobs/als-training/) uses RetailRocket's own item ids, a different id
+space from the catalog; the catalog-native model
+(experiments/recommendation/catalog_als/) shares the catalog's ids, so
+its results can be enriched via product-service like every other
+endpoint. main.py's callers handle both by falling back to raw ids if
+enrichment fails.
 """
 import base64
 import os

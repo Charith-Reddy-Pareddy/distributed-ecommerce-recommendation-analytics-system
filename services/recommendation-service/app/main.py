@@ -5,6 +5,7 @@ import httpx
 from fastapi import FastAPI, HTTPException
 
 from .hbase_client import get_precomputed_recommendations
+from .hybrid import blend
 from .model import engine
 
 PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL", "http://localhost:8001")
@@ -56,13 +57,24 @@ async def popular(n: int = 10):
     return {"popular_products": await _enrich_with_products(scored)}
 
 
-# Batch-layer ALS recs from HBase -- a different id space than the
-# demo catalog, see hbase_client.py.
+# Batch-layer ALS recs from HBase. Enriched via product-service when the
+# loaded model is catalog-native (experiments/recommendation/catalog_als/),
+# whose ids match the demo catalog -- falls back to raw ids if enrichment
+# fails, since HBase may still hold the older RetailRocket-id-space model.
 @app.get("/recommendations/precomputed/{visitor_id}")
 async def precomputed(visitor_id: int):
     recs = await get_precomputed_recommendations(visitor_id)
     if recs is None:
         raise HTTPException(status_code=404, detail="No precomputed recommendations for this visitor_id")
+
+    scored = [(r["itemid"], r["score"]) for r in recs]
+    try:
+        enriched = await _enrich_with_products(scored)
+    except httpx.HTTPError:
+        enriched = None
+
+    if enriched:
+        return {"visitor_id": visitor_id, "source": "als-hbase", "recommendations": enriched}
     return {"visitor_id": visitor_id, "source": "als-hbase", "recommendations": recs}
 
 
@@ -70,3 +82,28 @@ async def precomputed(visitor_id: int):
 async def recommend(user_id: int, n: int = 5):
     scored = engine.recommend_for_user(user_id, top_n=n)
     return {"user_id": user_id, "recommendations": await _enrich_with_products(scored)}
+
+
+# Blends live item-CF with precomputed catalog-ALS (see hybrid.py for why
+# alpha=0.25). Falls back to pure CF if this user has no HBase row yet --
+# new users, or HBase not yet loaded with the catalog-native model.
+@app.get("/recommendations/hybrid/{user_id}")
+async def hybrid(user_id: int, n: int = 5, alpha: float | None = None):
+    cf_scored = engine.recommend_for_user(user_id, top_n=50)
+    als_recs = await get_precomputed_recommendations(user_id)
+
+    if not als_recs:
+        return {
+            "user_id": user_id,
+            "source": "item-cf (no precomputed ALS for this user)",
+            "recommendations": await _enrich_with_products(cf_scored[:n]),
+        }
+
+    als_scored = [(r["itemid"], r["score"]) for r in als_recs]
+    blend_kwargs = {} if alpha is None else {"alpha": alpha}
+    blended = blend(cf_scored, als_scored, **blend_kwargs)
+    return {
+        "user_id": user_id,
+        "source": "hybrid-cf-als",
+        "recommendations": await _enrich_with_products(blended[:n]),
+    }
