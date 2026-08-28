@@ -29,14 +29,41 @@ class RecommendationEngine:
             self.item_users[product_id][user_id] += weight
 
     def consume_forever(self) -> None:
-        consumer = new_consumer()
+        # This runs in a background daemon thread (see start()) -- an
+        # uncaught exception here just kills the thread silently, with
+        # nothing in the logs to say so and the HTTP server staying up
+        # and "healthy" the whole time. Log loudly instead.
+        print("[recommendation-engine] consumer thread starting", flush=True)
+        try:
+            consumer = new_consumer()
+        except Exception as e:
+            print(f"[recommendation-engine] failed to create consumer: {e!r}", flush=True)
+            raise
+        print("[recommendation-engine] consumer created, subscribed, polling...", flush=True)
+
+        processed = 0
         try:
             while True:
-                msg = consumer.poll(timeout=1.0)
-                if msg is None or msg.error():
+                try:
+                    msg = consumer.poll(timeout=1.0)
+                except Exception as e:
+                    print(f"[recommendation-engine] poll() raised: {e!r}", flush=True)
                     continue
-                self._apply_event(json.loads(msg.value()))
+                if msg is None:
+                    continue
+                if msg.error():
+                    print(f"[recommendation-engine] message error: {msg.error()}", flush=True)
+                    continue
+                try:
+                    self._apply_event(json.loads(msg.value()))
+                except Exception as e:
+                    print(f"[recommendation-engine] failed to apply event: {e!r}", flush=True)
+                    continue
+                processed += 1
+                if processed % 5000 == 0:
+                    print(f"[recommendation-engine] processed {processed} events so far", flush=True)
         finally:
+            print(f"[recommendation-engine] consumer thread exiting after {processed} events", flush=True)
             consumer.close()
 
     def start(self) -> None:
