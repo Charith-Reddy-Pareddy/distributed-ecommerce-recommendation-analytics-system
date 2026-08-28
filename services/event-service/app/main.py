@@ -5,8 +5,15 @@ from fastapi import FastAPI
 
 from . import schemas
 from .kafka_producer import publish_event
+from .metrics import MetricsMiddleware, metrics_response
 
 app = FastAPI(title="Event Ingestion Service")
+app.add_middleware(MetricsMiddleware)
+
+
+@app.get("/metrics")
+def metrics():
+    return metrics_response()
 
 
 @app.get("/health")

@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from . import cassandra_optimizer, decision_log, es_optimizer, pg_optimizer
+from .metrics import MetricsMiddleware, metrics_response
 
 
 @asynccontextmanager
@@ -19,6 +20,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Serving-Layer Optimizer", lifespan=lifespan)
+app.add_middleware(MetricsMiddleware)
+
+
+@app.get("/metrics")
+def metrics():
+    return metrics_response()
 
 
 @app.get("/health")

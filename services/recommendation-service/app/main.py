@@ -7,6 +7,7 @@ from fastapi import FastAPI, HTTPException
 from .hbase_client import get_precomputed_recommendations
 from .hybrid import blend
 from .model import engine
+from .metrics import MetricsMiddleware, metrics_response
 
 PRODUCT_SERVICE_URL = os.getenv("PRODUCT_SERVICE_URL", "http://localhost:8001")
 
@@ -18,6 +19,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Recommendation Service", lifespan=lifespan)
+app.add_middleware(MetricsMiddleware)
+
+
+@app.get("/metrics")
+def metrics():
+    return metrics_response()
 
 
 @app.get("/health")

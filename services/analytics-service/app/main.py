@@ -7,6 +7,7 @@ from . import models
 from .cassandra_client import get_demand_timeseries
 from .consumer import start_consumer
 from .database import engine, get_db
+from .metrics import MetricsMiddleware, metrics_response
 
 models.Base.metadata.create_all(bind=engine)
 
@@ -18,6 +19,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Analytics Service", lifespan=lifespan)
+app.add_middleware(MetricsMiddleware)
+
+
+@app.get("/metrics")
+def metrics():
+    return metrics_response()
 
 
 @app.get("/health")

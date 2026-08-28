@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException
 
 from . import crud, schemas
 from .search_client import ensure_index, index_product, search_products
+from .metrics import MetricsMiddleware, metrics_response
 
 
 @asynccontextmanager
@@ -18,6 +19,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Product Catalog Service", lifespan=lifespan)
+app.add_middleware(MetricsMiddleware)
+
+
+@app.get("/metrics")
+def metrics():
+    return metrics_response()
 
 
 @app.get("/health")

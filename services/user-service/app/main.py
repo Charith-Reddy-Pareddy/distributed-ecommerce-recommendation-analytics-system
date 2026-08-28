@@ -3,10 +3,17 @@ from sqlalchemy.orm import Session
 
 from . import crud, models, schemas
 from .database import engine, get_db
+from .metrics import MetricsMiddleware, metrics_response
 
 models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="User Service")
+app.add_middleware(MetricsMiddleware)
+
+
+@app.get("/metrics")
+def metrics():
+    return metrics_response()
 
 
 @app.get("/health")

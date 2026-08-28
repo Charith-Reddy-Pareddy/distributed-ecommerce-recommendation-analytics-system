@@ -4,3 +4,4 @@ sqlalchemy==2.0.35
 psycopg2-binary==2.9.9
 confluent-kafka==2.5.3
 cassandra-driver==3.29.2
+prometheus-client==0.21.0
