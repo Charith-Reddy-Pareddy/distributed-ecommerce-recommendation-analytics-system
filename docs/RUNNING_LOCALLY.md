@@ -109,6 +109,25 @@ one JSON record per model per run. The existing RetailRocket ALS job
 (`jobs/als-training/`) is unrelated to this and still needs the Docker
 Spark+HDFS stack -- see the RetailRocket steps above.
 
+## Monitoring: Prometheus + Grafana
+
+Every FastAPI service exposes request-count and latency metrics at
+`/metrics` (`services/*/app/metrics.py`). Prometheus and Grafana are
+opt-in, behind a Compose profile, so the default `docker compose up`
+memory footprint is unchanged:
+
+```bash
+docker compose --profile monitoring up -d prometheus grafana
+```
+
+Prometheus scrapes all six services every 15s
+([http://localhost:9090](http://localhost:9090), check
+Status → Targets). Grafana ([http://localhost:3000](http://localhost:3000),
+anonymous access enabled for local use) auto-provisions the Prometheus
+datasource and a "Distributed E-Commerce: Service Metrics" dashboard
+(`infra/grafana/dashboards/services.json`) with request rate, p95
+latency, status codes, and per-endpoint breakdown, all by service.
+
 ## Tests
 
 `tests/` covers pure logic that doesn't need the stack running: the
