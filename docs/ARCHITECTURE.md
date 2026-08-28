@@ -101,9 +101,21 @@ curl http://localhost:8004/recommendations/precomputed/54
 
 Measured point-lookup latency over the REST layer: **~10ms average**.
 
-One caveat: the ALS model uses RetailRocket's own item ids, not this
-project's demo catalog ids, so `/recommendations/precomputed/{id}`
-can't be enriched through `product-service` like the other endpoints.
+One caveat: this HBase table is loaded from the RetailRocket ALS job's
+output, so it still holds RetailRocket's own item ids, not this
+project's demo catalog ids -- `/recommendations/precomputed/{id}`
+can't be enriched through `product-service` for *this* data.
+
+The catalog-native ALS model (`experiments/recommendation/catalog_als/`)
+solves the id-space problem and the live `/recommendations/hybrid/{user_id}`
+endpoint (`hybrid.py`) is built and unit-tested against it -- but
+`hbase-loader` hasn't been extended to load *its* output into HBase yet,
+only the RetailRocket job's. Until that's done, the hybrid endpoint has
+no precomputed ALS row to blend with and always falls back to pure
+CF live, even though the offline evaluation in
+[docs/RESEARCH_REPORT.md](RESEARCH_REPORT.md) shows the blend really
+does outperform CF alone. This is a genuine gap, not a documented-around
+one -- see [Limitations](RESEARCH_REPORT.md#limitations).
 
 ## Time-series analytics: Cassandra
 
@@ -227,11 +239,17 @@ Flask, never directly to the backend services.
 
 ## Trade-offs and lessons learned
 
-- **Two disconnected id spaces.** ALS trains on RetailRocket's own
-  item ids; the demo catalog has its own (see Serving layer: HBase
-  above) -- `/recommendations/precomputed/{id}` can't be enriched
-  through `product-service` as a result. In a v2 I'd train ALS on the
-  demo catalog directly, or add an explicit id mapping.
+- **Two disconnected id spaces -- fixed for modeling, not yet for live
+  serving.** ALS originally only trained on RetailRocket's own item
+  ids, a different space from the demo catalog. A second, catalog-native
+  ALS model trained on a synthetic-but-structured interaction log over
+  the real catalog (`experiments/recommendation/`) fixes this for
+  offline evaluation -- that's what made the hybrid CF+ALS blend below
+  possible, and measurably better than either model alone. What's not
+  done: `hbase-loader` still only loads the RetailRocket job's output,
+  so the live hybrid endpoint has no precomputed catalog-ALS row to
+  blend with yet and always falls back to pure CF (see
+  [Serving layer: HBase](#serving-layer-hbase)).
 
 - **Spark's `update` output mode was the trickiest bug to get
   right.** The Cassandra writer upserts each window's running total
@@ -241,14 +259,25 @@ Flask, never directly to the backend services.
 - **Autonomous systems need a real failure to prove themselves.**
   `serving-optimizer`'s Postgres tuner had nothing to act on until
   `user-service` had a real unindexed, filtered query in traffic --
-  the `country` filter exists specifically to give it one.
+  the `country` filter exists specifically to give it one. Measured
+  effect once it did: p95 read latency dropped 45% (see
+  [docs/RESEARCH_REPORT.md](RESEARCH_REPORT.md)).
 
 - **Running ~20 containers on one machine is its own kind of ops
   work.** Every JVM-heavy store needed its own memory-limit tuning
   pass to stop them competing for the same 12GB -- a cost of the
   single-host demo, not of the architecture itself.
 
-- **What I'd cut in a v2:** the in-memory CF model and the batch ALS
-  model both rank products for a user with no blending strategy
-  between them. A v2 would pick one, or define how they combine,
-  instead of exposing both as separate endpoints.
+- **The in-memory CF model and the batch ALS model do blend now.** A
+  hybrid `Score(i) = α·ALS(i) + (1-α)·CF(i)` (`services/
+  recommendation-service/app/hybrid.py`) replaced the two competing,
+  unrelated endpoints -- α=0.25, the empirically best value from
+  `experiments/recommendation/hybrid.py`'s offline sweep, is now the
+  live `/recommendations/hybrid/{user_id}` endpoint's default.
+
+- **A background thread with no logging is a liability.**
+  `recommendation-service`'s Kafka consumer ran with zero logging from
+  the start -- when it went idle during testing, `/health` kept
+  returning 200 the whole time, with nothing anywhere to say the model
+  wasn't updating. Fixed by logging thread startup, every message
+  error, and periodic replay progress.
