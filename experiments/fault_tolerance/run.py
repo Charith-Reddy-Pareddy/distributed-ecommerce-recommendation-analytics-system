@@ -49,7 +49,14 @@ def kill_service(name):
 
 
 def restart_service(name):
+    """Brings a stopped/killed container back up. A no-op if it's already
+    running -- use cycle_running_service() to actually restart one that's
+    still up (`docker compose start` on a running container does nothing)."""
     docker("start", name)
+
+
+def cycle_running_service(name):
+    docker("restart", name)
 
 
 def wait_healthy(url, deadline_s=60, poll_s=1.0):
@@ -195,38 +202,50 @@ def run_hdfs_sink_experiment(n_events=40, product_id_base=777000):
     return result
 
 
+def _search_or_error(q="the"):
+    """Returns (result_count_or_None, http_status, error_body_or_None)."""
+    resp = httpx.get(f"{PRODUCT_SERVICE}/products/search", params={"q": q}, timeout=10)
+    if resp.status_code != 200:
+        return None, resp.status_code, resp.text[:200]
+    return len(resp.json().get("results", [])), resp.status_code, None
+
+
 def run_elasticsearch_experiment():
     print("=== elasticsearch fault tolerance ===", flush=True)
-    baseline = httpx.get(f"{PRODUCT_SERVICE}/products/search", params={"q": "the"}, timeout=10).json()
-    baseline_count = len(baseline.get("results", []))
+    baseline_count, _, _ = _search_or_error()
     print(f"Baseline search returns {baseline_count} results", flush=True)
 
-    kill_service("elasticsearch")
-    time.sleep(3)
-    restart_service("elasticsearch")
-    es_health_s = wait_healthy("http://localhost:9200/_cluster/health", deadline_s=60)
+    # docker kill + `compose start` reuses the SAME container -- its own
+    # writable filesystem layer survives even with no named volume, so
+    # that would only test "the ES process crashed," not "no persistent
+    # volume." Actually testing the no-persistent-volume claim needs the
+    # container itself replaced: remove it, then recreate fresh.
+    docker("rm", "-f", "-s", "elasticsearch")
+    docker("up", "-d", "elasticsearch")
+    es_health_s = wait_healthy("http://localhost:9200/_cluster/health", deadline_s=90)
     print(f"Elasticsearch container healthy again in {es_health_s and round(es_health_s,2)}s", flush=True)
 
     time.sleep(3)
-    after_es_restart = httpx.get(f"{PRODUCT_SERVICE}/products/search", params={"q": "the"}, timeout=10).json()
-    after_es_restart_count = len(after_es_restart.get("results", []))
-    print(f"Search after ES-only restart: {after_es_restart_count} results (index not rebuilt by product-service)", flush=True)
+    after_es_count, after_es_status, after_es_error = _search_or_error()
+    print(f"Search after ES container recreated: status={after_es_status} count={after_es_count} error={after_es_error}", flush=True)
 
-    restart_service("product-service")
+    cycle_running_service("product-service")  # it was never killed, so `start` would be a no-op
     ps_health_s = wait_healthy(f"{PRODUCT_SERVICE}/health", deadline_s=60)
     time.sleep(2)
-    after_ps_restart = httpx.get(f"{PRODUCT_SERVICE}/products/search", params={"q": "the"}, timeout=10).json()
-    after_ps_restart_count = len(after_ps_restart.get("results", []))
-    print(f"Search after product-service also restarted: {after_ps_restart_count} results", flush=True)
+    after_ps_count, after_ps_status, after_ps_error = _search_or_error()
+    print(f"Search after product-service also restarted: status={after_ps_status} count={after_ps_count}", flush=True)
 
     result = {
         "baseline_result_count": baseline_count,
         "es_container_recovery_s": round(es_health_s, 2) if es_health_s else None,
-        "results_after_es_restart_only": after_es_restart_count,
-        "index_stayed_empty_after_es_restart_alone": after_es_restart_count == 0,
+        "search_status_after_es_restart_only": after_es_status,
+        "search_error_after_es_restart_only": after_es_error,
+        "results_after_es_restart_only": after_es_count,
+        "search_broken_after_es_restart_alone": after_es_status != 200,
         "product_service_recovery_s": round(ps_health_s, 2) if ps_health_s else None,
-        "results_after_product_service_restart": after_ps_restart_count,
-        "reindex_fixed_by_product_service_restart": after_ps_restart_count >= baseline_count,
+        "search_status_after_product_service_restart": after_ps_status,
+        "results_after_product_service_restart": after_ps_count,
+        "reindex_fixed_by_product_service_restart": after_ps_status == 200 and (after_ps_count or 0) >= (baseline_count or 0),
     }
     record_result(
         RESULTS_DIR, name="fault_elasticsearch", config={}, dataset="live traffic",
