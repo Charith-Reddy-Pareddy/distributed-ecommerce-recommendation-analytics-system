@@ -449,6 +449,32 @@ services:
       serving-optimizer:
         condition: service_started
 
+  # Scrapes each service's /metrics. Opt-in (docker compose --profile
+  # monitoring up) so the default stack's memory footprint is unchanged.
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    profiles: ["monitoring"]
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    mem_limit: 256m
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    profiles: ["monitoring"]
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    mem_limit: 256m
+    depends_on:
+      - prometheus
+
 volumes:
   pgdata:
   mongodata:

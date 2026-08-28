@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: services
+    static_configs:
+      - targets:
+          - product-service:8000
+          - user-service:8000
+          - event-service:8000
+          - recommendation-service:8000
+          - analytics-service:8000
+          - serving-optimizer:8000
+        labels:
+          project: distributed-ecommerce
