@@ -1,8 +1,17 @@
-"""One-shot job: loads the ALS top-10-recommendations table from HDFS
-into HBase for low-latency lookups.
+"""One-shot job: loads an ALS top-10-recommendations table from HDFS into
+HBase for low-latency lookups.
 
 Uses HBase's REST server (Stargate) over plain HTTP, keeping this a
 lightweight Python service like the rest of the project.
+
+Source-agnostic via env vars, so the same code loads either the
+original RetailRocket job's output (its own id space, RECS_PATH/id
+field names default to that) or the catalog-native ALS job's output
+(real product-service ids) -- see docs/RUNNING_LOCALLY.md for both
+invocations. RECREATE_TABLE=true drops and recreates the table first,
+which matters when switching sources: both jobs' user/item ids are
+small integers, so loading one source on top of stale rows from the
+other would silently mix two different id spaces under the same keys.
 """
 import base64
 import json
@@ -14,7 +23,10 @@ from hdfs import InsecureClient
 
 WEBHDFS_URL = os.getenv("WEBHDFS_URL", "http://hdfs-namenode:9870")
 HBASE_REST_URL = os.getenv("HBASE_REST_URL", "http://hbase-rest:8080")
-RECS_PATH = "/output/als-recommendations"
+RECS_PATH = os.getenv("RECS_PATH", "/output/als-recommendations")
+USER_ID_FIELD = os.getenv("USER_ID_FIELD", "visitorid")
+ITEM_ID_FIELD = os.getenv("ITEM_ID_FIELD", "itemid")
+RECREATE_TABLE = os.getenv("RECREATE_TABLE", "false").lower() == "true"
 TABLE_NAME = "als_recommendations"
 COLUMN_FAMILY = "rec"
 BATCH_SIZE = 200
@@ -29,7 +41,7 @@ def load_recommendations_from_hdfs() -> dict[int, list[tuple[int, float]]]:
     by_user: dict[int, list[tuple[int, float]]] = defaultdict(list)
 
     for filename in client.list(RECS_PATH):
-        if not filename.endswith(".json"):
+        if not (filename.endswith(".json") or filename.endswith(".jsonl")):
             continue
         with client.read(f"{RECS_PATH}/{filename}", encoding="utf-8") as reader:
             for line in reader:
@@ -37,7 +49,7 @@ def load_recommendations_from_hdfs() -> dict[int, list[tuple[int, float]]]:
                 if not line:
                     continue
                 row = json.loads(line)
-                by_user[row["visitorid"]].append((row["itemid"], row["score"]))
+                by_user[row[USER_ID_FIELD]].append((row[ITEM_ID_FIELD], row["score"]))
 
     for user_id, recs in by_user.items():
         recs.sort(key=lambda pair: pair[1], reverse=True)
@@ -45,7 +57,19 @@ def load_recommendations_from_hdfs() -> dict[int, list[tuple[int, float]]]:
     return by_user
 
 
+def _delete_table_if_exists() -> None:
+    resp = requests.get(f"{HBASE_REST_URL}/{TABLE_NAME}/schema", timeout=10)
+    if resp.status_code != 200:
+        return
+    resp = requests.delete(f"{HBASE_REST_URL}/{TABLE_NAME}/schema", timeout=30)
+    resp.raise_for_status()
+    print(f"Dropped existing table {TABLE_NAME}", flush=True)
+
+
 def create_table_if_missing() -> None:
+    if RECREATE_TABLE:
+        _delete_table_if_exists()
+
     resp = requests.get(f"{HBASE_REST_URL}/{TABLE_NAME}/schema", timeout=10)
     if resp.status_code == 200:
         return
@@ -85,7 +109,7 @@ def write_batch(rows: list[dict]) -> None:
 
 
 def main() -> None:
-    print("Reading ALS recommendations from HDFS...", flush=True)
+    print(f"Reading ALS recommendations from {RECS_PATH} (fields: {USER_ID_FIELD}/{ITEM_ID_FIELD})...", flush=True)
     by_user = load_recommendations_from_hdfs()
     print(f"Loaded recommendations for {len(by_user)} users", flush=True)
 
