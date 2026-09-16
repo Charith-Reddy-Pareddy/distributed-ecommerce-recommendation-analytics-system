@@ -55,6 +55,11 @@ def load_test_actuals(test_path):
 
 
 def top_k_unseen(model, train_df, test_users_df, k=TOP_K):
+    """Returns dict[user_id -> [(product_id, score), ...]], ranked, capped
+    at k. Keeping the score (not just product_id) matters downstream --
+    hbase-loader's HBase rows store a score per recommendation, not just
+    rank order.
+    """
     # ALS doesn't exclude already-seen items, so ask for more than k and
     # drop those before taking the final top-k (same approach as the
     # RetailRocket job's precision_at_k).
@@ -70,7 +75,7 @@ def top_k_unseen(model, train_df, test_users_df, k=TOP_K):
     for row in rows:
         recs.setdefault(row.user_id, [])
         if len(recs[row.user_id]) < k:
-            recs[row.user_id].append(row.product_id)
+            recs[row.user_id].append((row.product_id, row.score))
     return recs
 
 
@@ -100,7 +105,8 @@ def train_and_evaluate(spark, train_df, test_df, actuals, als_params=None, k=TOP
     elapsed = time.perf_counter() - start
     latency_ms_per_user = (elapsed / max(n_test_users, 1)) * 1000
 
-    metrics = evaluate(recs, actuals, k=k)
+    recs_ids_only = {user_id: [pid for pid, _ in items] for user_id, items in recs.items()}
+    metrics = evaluate(recs_ids_only, actuals, k=k)
     result = {**metrics, "latency_ms_per_user": latency_ms_per_user}
     return model, result, n_test_users
 
@@ -125,8 +131,12 @@ def main():
     recs = top_k_unseen(model, train_df, test_users_df, TOP_K)
 
     all_recs_df = spark.createDataFrame(
-        [(user_id, product_id, rank) for user_id, items in recs.items() for rank, product_id in enumerate(items)],
-        ["user_id", "product_id", "rank"],
+        [
+            (user_id, product_id, rank, float(score))
+            for user_id, items in recs.items()
+            for rank, (product_id, score) in enumerate(items)
+        ],
+        ["user_id", "product_id", "rank", "score"],
     )
     all_recs_df.write.mode("overwrite").parquet(str(RECS_OUTPUT_PATH))
     print(f"[catalog-ALS] Recommendations written to {RECS_OUTPUT_PATH}", flush=True)
