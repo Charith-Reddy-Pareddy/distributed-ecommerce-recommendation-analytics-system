@@ -206,17 +206,18 @@ autonomous `serving-optimizer` -- is in
   genuinely sparse -- median 1 interaction per user across ~1.4M
   users. A production system would want richer item features or a
   hybrid content + collaborative approach.
-- **The id-mismatch problem got fixed for modeling, not yet for live
-  serving.** The original ALS model trained on RetailRocket's own item
-  ids, a different space from the demo catalog -- so precomputed
+- **The id-mismatch problem got fixed for real, live serving
+  included.** The original ALS model trained on RetailRocket's own
+  item ids, a different space from the demo catalog -- so precomputed
   recommendations couldn't be enriched through `product-service`. A
   second ALS model, trained on a synthetic-but-structured interaction
   log over the *real* catalog, put CF, ALS, and the catalog in one id
-  space, which is what made a genuine hybrid blend (RQ3) possible to
-  *evaluate* at all. What's still missing: `hbase-loader` was never
-  extended to load that model's output, so the live hybrid endpoint
-  has no precomputed row to blend with yet and always falls back to
-  pure CF -- a real, open gap, not one papered over. See
+  space, making a genuine hybrid blend (RQ3) possible to evaluate --
+  and `hbase-loader` is now source-agnostic, so the live
+  `/recommendations/hybrid/{user_id}` endpoint genuinely serves it:
+  verified end-to-end (a live interaction updates CF within seconds
+  while the precomputed ALS side stays exactly static until the batch
+  pipeline reruns), not just offline. See
   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#serving-layer-hbase).
 
 More trade-offs and lessons learned are in

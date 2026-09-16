@@ -206,6 +206,28 @@ burst itself but measurably delays individual documents becoming
 searchable -- exactly the trade-off the architecture doc already
 claimed, now confirmed rather than assumed.
 
+### Live hybrid pipeline verification
+
+The offline result above (hybrid beats either model alone) only means
+something if the live system actually serves it. It does -- verified,
+not assumed, via `tests/integration/test_hybrid_live_pipeline.py`:
+
+1. `/recommendations/precomputed/{user}` returns real, enrichable
+   catalog-native items (previously RetailRocket ids, unenrichable).
+2. `/recommendations/hybrid/{user}` reports `source: "hybrid-cf-als"`,
+   not the pure-CF fallback.
+3. Two brand-new products (created fresh in the test, absent from the
+   ALS training snapshot) fired as a live co-purchase surface through
+   `/recommendations/similar/{id}` within seconds -- proof the CF side
+   is genuinely live, not cached.
+4. `/recommendations/precomputed/{user}` for the same user is
+   byte-for-byte identical before and after that live traffic -- proof
+   the precomputed ALS side is genuinely a static batch artifact, not
+   silently recomputing.
+
+That's the freshness/latency distinction from RQ3 demonstrated live,
+not just measured offline.
+
 ### Systems experiments
 
 **Throughput** (`experiments/throughput/`, paced load against the live
@@ -307,13 +329,6 @@ cosine similarity work per recommendation).
   not be read as "this is what real users would do" -- only the
   *relative* comparisons between models, splits, and configurations
   are the actual claims this report makes.
-- **The hybrid endpoint isn't fully wired live.** `hybrid.py` and its
-  unit tests are real and correct, and the offline evaluation above
-  shows the blend works -- but `hbase-loader` was never extended to
-  load the catalog-native ALS model's output into HBase, so
-  `/recommendations/hybrid/{user_id}` currently always falls back to
-  pure CF in the running system. The offline result is real; the live
-  path to it is not yet complete.
 - **Replay-completion proxies, not guarantees.** The fault-tolerance
   experiment's "stabilized" metric for `recommendation-service` is an
   observable proxy (the visible top-10 stopped changing), not direct
@@ -333,8 +348,6 @@ cosine similarity work per recommendation).
 
 ## Future work
 
-- Finish wiring the live hybrid endpoint (extend `hbase-loader` to
-  load `experiments/recommendation/catalog_als/`'s output).
 - Repeat key experiments (model comparison, hybrid sweep) at multiple
   random seeds to get real confidence intervals instead of point
   estimates.

@@ -147,17 +147,24 @@ every push and pull request. **65 unit tests** as of this writing.
 `tests/integration/` covers the opposite: Kafka event-flow (does a
 posted event really reach a downstream consumer's live state), DB
 round-trips (Postgres, MongoDB, Elasticsearch), a full recommendation
-pipeline end-to-end, and API contracts (validation errors, 404s,
-response shapes) -- all against the live stack, so it's excluded from
-the default `pytest` run (`pytest.ini`'s `--ignore=tests/integration`)
-and CI. Run explicitly once `docker compose up` is running:
+pipeline end-to-end, the live hybrid CF+ALS pipeline specifically, and
+API contracts (validation errors, 404s, response shapes) -- all
+against the live stack, so it's excluded from the default `pytest` run
+(`pytest.ini`'s `--ignore=tests/integration`) and CI. Run explicitly
+once `docker compose up` is running:
 
 ```bash
-pip install httpx
+pip install -r tests/integration/requirements.txt
 pytest tests/integration
 ```
 
-**13 integration tests** as of this writing.
+`test_hybrid_live_pipeline.py` additionally needs the catalog-native
+ALS table loaded first -- see
+[Recommendation experiments](#recommendation-experiments) below and
+[Serving layer: HBase](ARCHITECTURE.md#serving-layer-hbase) for the
+full load command; it skips itself (not a failure) if that hasn't run.
+
+**14 integration tests** as of this writing.
 
 ## Project layout
 
