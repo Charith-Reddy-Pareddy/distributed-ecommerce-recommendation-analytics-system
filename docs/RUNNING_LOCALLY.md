@@ -142,7 +142,7 @@ pytest
 ```
 
 CI (`.github/workflows/ci.yml`) runs `compileall` and this suite on
-every push and pull request. **65 unit tests** as of this writing.
+every push and pull request. **70 unit tests** as of this writing.
 
 `tests/integration/` covers the opposite: Kafka event-flow (does a
 posted event really reach a downstream consumer's live state), DB

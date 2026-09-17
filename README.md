@@ -79,7 +79,18 @@ methodology.
   recovers with **zero event loss**, while Elasticsearch genuinely
   loses its index on container replacement and only recovers once
   `product-service` -- not ES itself -- restarts.
-- **65 unit tests + 13 integration tests**, all passing, and several
+- **The naive CF lookup doesn't scale, and now it doesn't have to.**
+  `similar_items()` used to compute cosine similarity against every
+  other item on every request. Measured with catalog size *and*
+  traffic scaling together (matching this project's own real
+  users-per-product ratio, not an artificially sparse case): live p95
+  latency grew **8ms → 84ms → 90ms** at 300 → 3,000 → 5,000 items,
+  while a periodically-refreshed precomputed neighbor cache stayed at
+  **0.002-0.054ms** throughout -- a 1,600-5,100x speedup. The
+  precompute itself isn't free (1s → 142s → 358s at those same
+  scales), an honest limit on this approach, not hidden -- see
+  [Key challenges](#key-challenges).
+- **70 unit tests + 14 integration tests**, all passing, and several
   real bugs found and fixed while building this: a corrupted
   multiprocessing state after repeated force-kills, a Kafka consumer
   that goes silently idle with nothing in the logs to say so, and
@@ -192,6 +203,16 @@ autonomous `serving-optimizer` -- is in
   negatives under heavy background traffic, and `docker compose
   start` silently no-op'ing on an already-running container. Each one
   looked like a system failure until traced back to the test.
+- **The fix for one bottleneck can become the next one.** Precomputing
+  item-item neighbors instead of computing them live fixed the O(n)
+  per-request cost -- but the precompute itself is O(n²)-ish, and its
+  own cost grew faster than expected once traffic scaled alongside
+  catalog size (142s → 358s from 3,000 → 5,000 items, worse than
+  linear in items). That's not a hidden flaw, it's the honest reason
+  production systems move to approximate/incremental methods (FAISS,
+  HNSW, or updating only affected pairs) past some scale rather than
+  exact all-pairs precomputation -- a real *next* bottleneck, not a
+  solved problem.
 
 ## Technical considerations & takeaways
 
@@ -246,7 +267,9 @@ HBase point lookup:              ~10ms average over the REST layer
 Product catalog:                 300 Amazon products
 Optimizer Postgres p95:          6.14ms -> 3.38ms after auto-indexing (-45%)
 hdfs-sink crash recovery:        40/40 tracked events recovered, zero loss
-Test suite:                       65 unit tests + 13 integration tests, all passing
+Test suite:                       70 unit tests + 14 integration tests, all passing
+CF similar-items (300 items):     live p95 8ms -> cached p95 0.002ms (5,133x)
+CF similar-items (5,000 items):   live p95 90ms -> cached p95 0.054ms (1,648x)
 ```
 
 ## Data sources

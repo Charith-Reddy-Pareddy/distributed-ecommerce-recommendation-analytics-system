@@ -21,6 +21,34 @@ filtering**:
 State is rebuilt on startup by replaying the Kafka topic, so the
 service is stateless from a deployment standpoint.
 
+**Scaling the similarity lookup.** Step 2 naively means computing
+cosine similarity against every other item on every request --
+O(n_items) per call, fine at this project's real 300-product catalog
+but not at 100K-10M items. `similar_items()` is now served from a
+`refresh_neighbor_cache()` background job that precomputes each item's
+top-50 neighbors on a timer (`NEIGHBOR_REFRESH_INTERVAL_SECONDS`,
+default 30s), turning the request-path cost into an O(1) dict lookup.
+Measured at increasing catalog size *and* proportional traffic
+(`experiments/recommendation/scalability_benchmark.py`, matching this
+project's real users-per-product ratio rather than an artificially
+sparse case):
+
+| Items | Users | Live p95 | Cache build | Cached p95 | Speedup |
+|---|---|---|---|---|---|
+| 300 | 2,000 | 8.0ms | 1.1s | 0.002ms | 5,133x |
+| 3,000 | 20,000 | 83.8ms | 142.0s | 0.045ms | 1,880x |
+| 5,000 | 33,333 | 89.8ms | 357.6s | 0.054ms | 1,648x |
+
+The cache build cost is real and grows faster than a naive O(n²)
+estimate suggests once traffic scales too (142s → 358s for 3,000 →
+5,000 items, worse than linear in items) -- an honest limit of exact
+all-pairs precomputation, not a solved problem. Past whatever scale
+makes that background job itself too slow, the next step would be
+approximate nearest-neighbor search (FAISS/HNSW/Annoy) or incremental
+per-pair updates instead of a full periodic rebuild -- out of scope
+here, but the real motivation for those approaches, not a hypothetical
+one.
+
 ## Batch layer: MapReduce
 
 `jobs/product-popularity/` is a real Hadoop **MapReduce** job (via

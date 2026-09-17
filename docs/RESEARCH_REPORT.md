@@ -228,6 +228,36 @@ not assumed, via `tests/integration/test_hybrid_live_pipeline.py`:
 That's the freshness/latency distinction from RQ3 demonstrated live,
 not just measured offline.
 
+### CF scalability
+
+`similar_items()`'s cosine similarity against every other item on
+every request is O(n_items) per call -- fine at this project's real
+300-product catalog, not at 100K-10M items. Fixed with a periodically
+-refreshed precomputed top-N neighbor cache
+(`services/recommendation-service/app/model.py`'s
+`refresh_neighbor_cache`), measured against the real production
+`RecommendationEngine` class at increasing catalog size *and*
+proportional traffic (`experiments/recommendation/scalability_benchmark.py`
+-- users scale with items at this project's own real ratio, since a
+catalog that's genuinely grown presumably serves proportionally more
+traffic too, not the same fixed user count spread thinner):
+
+| Items | Users | Live p95 | Cache build | Cached p95 | Speedup |
+|---|---|---|---|---|---|
+| 300 | 2,000 | 8.0ms | 1.1s | 0.002ms | 5,133x |
+| 3,000 | 20,000 | 83.8ms | 142.0s | 0.045ms | 1,880x |
+| 5,000 | 33,333 | 89.8ms | 357.6s | 0.054ms | 1,648x |
+
+Live latency grows roughly linearly with scale, as expected for an
+O(n) per-request scan; cached latency stays flat and sub-millisecond
+throughout. The cache build cost is the honest cost of this approach,
+not swept under the rug -- it grew faster than a naive O(n²) estimate
+once traffic scaled too (142s → 358s, 3,000 → 5,000 items), which is
+the real argument for approximate/incremental methods (FAISS, HNSW, or
+updating only affected pairs) past whatever scale makes a full
+periodic rebuild itself too slow -- not attempted here, see
+[Limitations](#limitations).
+
 ### Systems experiments
 
 **Throughput** (`experiments/throughput/`, paced load against the live
@@ -315,9 +345,10 @@ item. Sweeping that:
 | 50 | **0.1260** | **0.3426** |
 
 Quality improves **monotonically** through 50 with no plateau --
-production's hardcoded 20 is conservative, trading some quality for
-per-request compute (each additional neighbor considered is more
-cosine similarity work per recommendation).
+production's hardcoded 20 is conservative. This ablation predates the
+neighbor cache below: the compute cost of considering more neighbors
+now falls on the periodic background refresh, not the request path,
+so there's less reason left not to raise it toward 50.
 
 ## Limitations
 
@@ -335,6 +366,12 @@ cosine similarity work per recommendation).
   confirmation the full Kafka topic replay finished -- a full replay
   could plausibly continue slightly longer without visibly changing
   a small top-10 window.
+- **The scalability fix has its own scaling limit.** The precomputed
+  neighbor cache turns per-request cost from O(n_items) into O(1), but
+  building it is still O(n_items²)-ish, and that cost grew faster than
+  expected once traffic scaled alongside catalog size (142s → 358s,
+  3,000 → 5,000 items). Not measured past 5,000 items here -- see
+  [Future work](#future-work).
 - **Single-host, single-run measurements.** Everything here was
   measured once, on one Apple Silicon Mac, under Docker Desktop
   resource limits, competing with this session's own other testing
@@ -357,6 +394,12 @@ cosine similarity work per recommendation).
 - A real content-based feature set (embeddings over product images/
   descriptions) instead of TF-IDF, given how weak TF-IDF content
   similarity turned out to be standalone.
+- Approximate nearest-neighbor search (FAISS/HNSW/Annoy) or
+  incremental per-pair similarity updates in place of the neighbor
+  cache's full periodic rebuild, past whatever catalog+traffic scale
+  makes that rebuild itself too slow -- not reached in this project's
+  measurements (5,000 items), but the cache-build growth trend is the
+  concrete argument for it.
 
 ## References
 
