@@ -2,15 +2,28 @@
 
 The model rebuilds its state from Kafka when the service starts and
 then updates as new events arrive.
+
+similar_items() served from a periodically-refreshed precomputed
+top-N-neighbor cache, not live O(n_items) cosine per request -- see
+`refresh_neighbor_cache`. At this project's real scale (300 items) the
+live computation was already fast; the cache exists because it clearly
+would not be at catalog sizes an order of magnitude or two larger, and
+"the model works at 300 items" isn't the same claim as "the model
+scales" -- see experiments/recommendation/scalability_benchmark.py for
+the measured difference at 300 / 10K / 50K items.
 """
 import json
 import math
+import os
 import threading
+import time
 from collections import defaultdict
 
 from .kafka_consumer import new_consumer
 
 EVENT_WEIGHTS = {"view": 1.0, "add_to_cart": 3.0, "purchase": 5.0}
+NEIGHBOR_REFRESH_INTERVAL_SECONDS = int(os.getenv("NEIGHBOR_REFRESH_INTERVAL_SECONDS", "30"))
+NEIGHBOR_CACHE_SIZE = 50  # generous headroom over any top_n callers actually request
 
 
 class RecommendationEngine:
@@ -18,6 +31,7 @@ class RecommendationEngine:
         self._lock = threading.Lock()
         self.user_item: dict[int, dict[int, float]] = defaultdict(lambda: defaultdict(float))
         self.item_users: dict[int, dict[int, float]] = defaultdict(lambda: defaultdict(float))
+        self._neighbor_cache: dict[int, list[tuple[int, float]]] = {}
 
     def _apply_event(self, event: dict) -> None:
         user_id = event["user_id"]
@@ -67,8 +81,8 @@ class RecommendationEngine:
             consumer.close()
 
     def start(self) -> None:
-        thread = threading.Thread(target=self.consume_forever, daemon=True)
-        thread.start()
+        threading.Thread(target=self.consume_forever, daemon=True).start()
+        threading.Thread(target=self.refresh_neighbors_forever, daemon=True).start()
 
     @staticmethod
     def _cosine(a: dict[int, float], b: dict[int, float]) -> float:
@@ -83,6 +97,16 @@ class RecommendationEngine:
         return dot / (norm_a * norm_b)
 
     def similar_items(self, product_id: int, top_n: int = 10) -> list[tuple[int, float]]:
+        cached = self._neighbor_cache.get(product_id)
+        if cached is not None:
+            return cached[:top_n]
+        # Not in the cache yet -- e.g. a brand-new item added since the
+        # last refresh cycle. Fall back to computing it live rather than
+        # returning nothing; refresh_neighbor_cache() will pick it up on
+        # its next pass.
+        return self._similar_items_live(product_id, top_n)
+
+    def _similar_items_live(self, product_id: int, top_n: int) -> list[tuple[int, float]]:
         with self._lock:
             target = self.item_users.get(product_id)
             if not target:
@@ -96,6 +120,41 @@ class RecommendationEngine:
         scores = [(pid, score) for pid, score in scores if score > 0]
         scores.sort(key=lambda x: x[1], reverse=True)
         return scores[:top_n]
+
+    def refresh_neighbor_cache(self) -> None:
+        """Rebuilds the top-N-neighbor cache for every item -- O(n_items^2),
+        meant to run periodically in the background
+        (see refresh_neighbors_forever), not per-request.
+
+        Snapshots each item's user-weight dict (not just the outer dict)
+        under the lock before computing, so the O(n^2) cosine pass itself
+        runs lock-free against a private copy -- live event processing and
+        requests aren't blocked for the duration, and reading a dict a
+        concurrent writer is still mutating can't raise mid-iteration.
+        """
+        with self._lock:
+            items = [(pid, dict(users)) for pid, users in self.item_users.items()]
+
+        new_cache: dict[int, list[tuple[int, float]]] = {}
+        for product_id, target in items:
+            scores = [
+                (other_id, self._cosine(target, other_users))
+                for other_id, other_users in items
+                if other_id != product_id
+            ]
+            scores = [(pid, score) for pid, score in scores if score > 0]
+            scores.sort(key=lambda x: x[1], reverse=True)
+            new_cache[product_id] = scores[:NEIGHBOR_CACHE_SIZE]
+
+        self._neighbor_cache = new_cache
+
+    def refresh_neighbors_forever(self) -> None:
+        while True:
+            time.sleep(NEIGHBOR_REFRESH_INTERVAL_SECONDS)
+            try:
+                self.refresh_neighbor_cache()
+            except Exception as e:
+                print(f"[recommendation-engine] neighbor cache refresh failed: {e!r}", flush=True)
 
     def recommend_for_user(self, user_id: int, top_n: int = 10) -> list[tuple[int, float]]:
         with self._lock:

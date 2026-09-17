@@ -102,3 +102,57 @@ def test_popular_items_ranked_by_total_weight():
     top = engine.popular_items(top_n=2)
     assert top[0][0] == 200
     assert top[1][0] == 100
+
+
+def test_similar_items_falls_back_to_live_when_cache_cold():
+    engine = engine_with_events([(1, 100, "purchase"), (1, 200, "purchase")])
+    assert engine._neighbor_cache == {}
+    results = engine.similar_items(100)
+    assert results == [(200, 1.0)]
+
+
+def test_refresh_neighbor_cache_matches_live_computation():
+    engine = engine_with_events(
+        [
+            (1, 100, "purchase"),
+            (1, 200, "purchase"),
+            (2, 100, "purchase"),
+            (2, 300, "view"),
+        ]
+    )
+    live = engine._similar_items_live(100, top_n=10)
+    engine.refresh_neighbor_cache()
+    cached = engine.similar_items(100, top_n=10)
+    assert cached == live
+
+
+def test_similar_items_uses_cache_once_warm_even_if_state_changes():
+    engine = engine_with_events([(1, 100, "purchase"), (1, 200, "purchase")])
+    engine.refresh_neighbor_cache()
+    # A new interaction won't retroactively change the cached answer --
+    # it only takes effect at the next refresh cycle. That's the whole
+    # point: the cache trades a bounded window of staleness for O(1)
+    # lookups instead of O(n_items) cosine on every request.
+    engine._apply_event({"user_id": 2, "product_id": 100, "event_type": "purchase"})
+    engine._apply_event({"user_id": 2, "product_id": 300, "event_type": "purchase"})
+    assert engine.similar_items(100) == [(200, 1.0)]
+    engine.refresh_neighbor_cache()
+    cached_ids = {pid for pid, _ in engine.similar_items(100)}
+    assert 300 in cached_ids
+
+
+def test_neighbor_cache_respects_requested_top_n():
+    engine = engine_with_events(
+        [(1, 100, "purchase"), (1, 200, "purchase"), (1, 300, "purchase"), (1, 400, "purchase")]
+    )
+    engine.refresh_neighbor_cache()
+    assert len(engine.similar_items(100, top_n=1)) == 1
+    assert len(engine.similar_items(100, top_n=10)) == 3  # only 3 other items exist
+
+
+def test_refresh_neighbor_cache_excludes_zero_scores_and_self():
+    engine = engine_with_events([(1, 100, "view"), (2, 200, "view")])
+    engine.refresh_neighbor_cache()
+    for product_id, neighbors in engine._neighbor_cache.items():
+        assert all(pid != product_id for pid, _ in neighbors)
+        assert all(score > 0 for _, score in neighbors)
