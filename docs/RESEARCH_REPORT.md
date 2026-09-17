@@ -66,6 +66,99 @@ matters):
   `experiments/recommendation/hybrid.py`) -- min-max normalized,
   alpha-weighted blend of two models' scores.
 
+### Algorithm definitions
+
+Exact formulas as implemented, not textbook defaults -- see the cited
+source for the literal code.
+
+**Item-based CF** (`services/recommendation-service/app/model.py`).
+Each item `i` is a sparse vector over users, `v_i[u] = Σ w(e)` for
+every event `e` on `(u, i)`, with `w(view)=1, w(add_to_cart)=3,
+w(purchase)=5`. Similarity between items `i, j` is weighted cosine,
+restricted to their common users `C = users(i) ∩ users(j)` for the dot
+product but the *full* vector for each norm (so an item with many more
+total interactions gets a proportionally larger norm even where the
+two items don't overlap):
+
+```
+sim(i, j) = ( Σ_{u∈C} v_i[u]·v_j[u] ) / ( ‖v_i‖ · ‖v_j‖ ),  0 if C = ∅ or either norm = 0
+```
+
+A user's candidate score for an unseen item `j` sums, over every item
+`i` the user already interacted with (weight `w_i`), that item's
+similarity to `j` among its precomputed top-50 neighbors:
+
+```
+score(u, j) = Σ_{i ∈ interacted(u)} sim(i, j) · w_i,   j ∉ interacted(u)
+```
+
+*Complexity.* One pairwise `sim(i, j)` costs `O(|users(i)| + |users(j)|)`
+(full-vector norms plus a set-intersection dot product). A live
+`similar_items()` call is `O(n_items · avg_users_per_item)`; the
+background `refresh_neighbor_cache()` job that replaces it is
+`O(n_items² · avg_users_per_item)` per full rebuild, run periodically
+rather than per-request -- see
+[Scaling the similarity lookup](ARCHITECTURE.md#recommendation-algorithm)
+for the measured wall-clock numbers at three catalog sizes, which grow
+faster than the `n_items²` term alone once `avg_users_per_item` scales
+with traffic too.
+
+**Content-based.** TF-IDF cosine similarity over each product's
+category, brand, and description text, same cosine formula as above
+but over term-frequency vectors instead of interaction vectors --
+included as a weak, non-personalized-by-behavior baseline (RQ2:
+Precision@10 0.014, far below CF/ALS).
+
+**ALS, implicit feedback** (`experiments/recommendation/catalog_als/train.py`,
+`jobs/als-training/train_als.py`; Spark MLlib, Hu-Koren-Volinsky
+formulation). Raw event weight `r_ui` becomes a *confidence*, not a
+target rating:
+
+```
+c_ui = 1 + α · r_ui          p_ui = 1 if r_ui > 0 else 0
+
+minimize over U, V:  Σ_{u,i} c_ui · (p_ui − u_uᵀv_i)²  +  λ · ( Σ_u ‖u_u‖² + Σ_i ‖v_i‖² )
+```
+
+solved by alternating least squares -- fix `V`, solve the now-linear
+system for every `U` row in closed form, then fix `U` and solve for
+`V`, repeat for `maxIter` rounds. This project's fixed hyperparameters:
+`rank=10` (latent factors), `maxIter=10`, `regParam (λ)=0.1`,
+`alpha (α)=1.0` -- see
+[Ablation studies](#als-hyperparameters-rank--regparam) for the sweep
+these were chosen from. `coldStartStrategy="drop"` excludes users/items
+with no training interactions from evaluation rather than emitting NaN
+predictions for them.
+
+*Complexity.* One ALS iteration is `O(n_nonzero · rank²  +  (n_users +
+n_items) · rank³)` -- the first term from building each row's normal
+equations over its nonzero ratings, the second from solving each of
+those `rank × rank` linear systems. Trains offline in batch, not on the
+request path, which is exactly the freshness/latency trade-off RQ3
+measures (a full retrain: ~4.5s on this dataset; a live CF update:
+~0.0005ms).
+
+**Anomaly detection, Welford's online algorithm**
+(`jobs/spark-streaming/session_and_anomaly.py`). Per-product running
+mean and variance update in `O(1)` per new per-minute count `x`,
+without storing the full history or re-scanning it:
+
+```
+n ← n + 1
+δ ← x − mean
+mean ← mean + δ/n
+M2 ← M2 + δ·(x − mean)        # note: uses the *updated* mean
+variance ← M2 / n             # population variance, not the n−1 sample estimator
+z = (x − mean_before_update) / sqrt(variance_before_update)
+```
+
+The z-score for window `x` is computed from the running stats *as they
+stood before* `x` is folded in (guarded by `n ≥ 3` so the first few
+windows per product don't fire on a near-zero variance), then `x` is
+folded in for the next window's comparison. `Z_SCORE_THRESHOLD = 2.5`
+in production; a controlled 60-event burst produced `z = 32.17` (see
+[Results](#systems-experiments)).
+
 ## Streaming architecture
 
 `jobs/spark-streaming/session_and_anomaly.py` runs two Spark
@@ -118,7 +211,37 @@ never presented as real user behavior -- see
 **Metrics.** Precision@10, Recall@10, MAP@10, NDCG@10
 (`experiments/recommendation/metrics.py`, hand-verified against known
 examples before use -- see the module's own test invocations),
-computed identically across every model.
+computed identically across every model. For a ranked recommendation
+list `R` truncated to `k` items and a user's held-out actual-interaction
+set `A` (relevance is binary -- `A` has no graded ratings):
+
+```
+Precision@k = |R[:k] ∩ A| / k
+Recall@k    = |R[:k] ∩ A| / |A|
+```
+
+`AP@k` (averaged across users into `MAP@k`) sums precision at each rank
+`i` where `R[i]` is a hit, then normalizes by `min(|A|, k)` -- not by
+however many hits were actually found, so a user with fewer possible
+hits than `k` isn't penalized for a ranking that could never reach 1.0:
+
+```
+AP@k = ( Σ_{i=1..k, R[i]∈A} Precision@i ) / min(|A|, k)
+```
+
+`NDCG@k` uses a binary-relevance log discount (`1/log2(rank+1)` per
+hit, no graded-relevance term since relevance here is binary), and
+normalizes against the best-case DCG a user with `|A|` actual items
+could possibly achieve, not a fixed constant:
+
+```
+DCG@k  = Σ_{i=1..k, R[i]∈A} 1/log2(i+1)
+IDCG@k = Σ_{i=1..min(|A|,k)} 1/log2(i+1)
+NDCG@k = DCG@k / IDCG@k
+```
+
+All four are computed per user, then averaged (unweighted, so heavy and
+light users count equally) across every user with a held-out split.
 
 **Reproducing a run.** No Docker needed for the recommendation
 experiments -- local-mode PySpark. See
