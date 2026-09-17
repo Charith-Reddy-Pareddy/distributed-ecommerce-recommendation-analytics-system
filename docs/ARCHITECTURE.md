@@ -284,6 +284,76 @@ Flask, never directly to the backend services.
 - **Autonomous Tuning** — a live feed of `serving-optimizer`'s
   decisions and status.
 
+## Delivery semantics and consistency guarantees
+
+What each consumer actually guarantees on crash/restart, verified
+against the literal commit/write ordering in code, not assumed from
+the library defaults.
+
+**Two different patterns for the same topic, by design.**
+`recommendation-service` and `analytics-service` each subscribe with a
+**fresh `group.id` (a UUID) every process start** and
+`auto.offset.reset=earliest`, and neither ever calls `consumer.commit()`
+-- there is no committed-offset state to resume from, on purpose. Every
+restart re-derives the in-memory model from the *entire* retained topic
+history (bounded by Kafka's 7-day retention -- see
+[Setup notes](../README.md#setup-notes)). This is a full-replay
+reconstruction, not incremental at-least-once delivery: it trades
+restart-time cost (replaying everything) for a strictly simpler
+invariant -- the in-memory state is always a pure function of "every
+event since retention started," never of "whatever happened to be
+committed when it last crashed."
+
+`hdfs-sink` instead keeps a **persistent `group.id`** and manually
+commits (`consumer.commit(asynchronous=False)`) only *after*
+`_flush_batch()` has already written the batch to HDFS. That ordering
+-- write, then commit -- is **at-least-once, not exactly-once**, and
+the failure mode is concrete, not theoretical: `_flush_batch()` names
+every file `batch-{uuid4()}.jsonl`, never overwriting or appending, so
+a crash between the write and the commit reprocesses the same messages
+into a **second, duplicate batch file** on restart, not data loss. The
+measured crash-recovery result ("40/40 events recovered, zero loss," in
+the README's Benchmarks) is real and is exactly what at-least-once
+promises -- it does not mean *no duplication is possible*, only that
+this specific test didn't happen to land in that crash window. A
+consumer needing exactly-once output here would need an idempotent
+write (e.g. a deterministic filename derived from the batch's own
+offset range, so re-writing it is a no-op) rather than a random one.
+
+**Spark gets both semantics from the same job, depending on the sink.**
+The session-reconstruction query writes to HDFS via
+`writeStream...format("json")` with a checkpoint location -- Spark's
+file sink is a well-defined **exactly-once** sink when paired with a
+checkpoint, since Spark's own commit log (not the file timestamps) is
+the source of truth for which micro-batches have already been written.
+The anomaly-detection query's `foreachBatch` write to Cassandra has no
+such guarantee from Spark itself -- `foreachBatch` can re-invoke the
+same micro-batch after a restart, which is exactly why the Cassandra
+writer **upserts each window's running total instead of incrementing
+it** (see [Trade-offs](#trade-offs-and-lessons-learned) below): the
+delivery is at-least-once, but the write is idempotent, so the
+*end state* is effectively-once even though the *delivery* isn't. This
+is the general pattern for building correct systems on at-least-once
+delivery -- push the idempotence into the write, not the delivery
+mechanism -- applied here, not just described.
+
+**Every datastore in this deployment is single-node**, so none of them
+is actually exercising a real partition-tolerance trade-off: Cassandra
+and the Postgres/Mongo instances all use their client library's default
+consistency level (`LOCAL_ONE` for the Cassandra driver, `w=1` for
+PyMongo) because there's only the one node to be consistent with here.
+`event-service`'s Kafka producer likewise never sets `acks` explicitly,
+so it gets librdkafka's default of `acks=-1` ("all in-sync replicas")
+-- a real setting, but with a single broker and no configured
+replication factor beyond 1, "all replicas" here means "the one
+broker," not the durability-under-replica-loss guarantee that setting
+exists to provide in a real cluster. Stated plainly rather than left
+implicit: this project's distributed-systems content is in the
+multi-consumer/multi-path *architecture* (Kafka fan-out, Lambda-style
+batch+speed layers, per-service datastores) and in the delivery
+semantics above, not in exercising CAP-theorem trade-offs that a
+single-node-per-store local deployment can't actually produce.
+
 ## Trade-offs and lessons learned
 
 - **Two disconnected id spaces -- fixed for modeling and for live
