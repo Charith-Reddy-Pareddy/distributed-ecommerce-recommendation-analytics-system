@@ -104,11 +104,20 @@ Then generate the synthetic interaction log, split it, and evaluate:
 ./.venv/bin/python experiments/recommendation/catalog_als/train.py    # catalog-native ALS
 ./.venv/bin/python experiments/recommendation/hybrid.py               # CF+ALS / CF+content alpha sweeps
 ./.venv/bin/python experiments/recommendation/bootstrap_ci.py         # bootstrap CIs on the above
+./.venv/bin/python experiments/recommendation/multi_seed.py           # 5-seed rerun, mean +/- std
 ```
 
+`multi_seed.py` regenerates its own interaction log and train/test
+split in memory at each of 5 seeds -- it never writes to
+`data/interactions*.parquet` or `catalog_als/model/`, so it's safe to
+run without disturbing the canonical seed=42 files the other commands
+above (and the live hybrid pipeline) depend on. Expect it to take
+several minutes -- it retrains ALS 5 times.
+
 Results land in `experiments/recommendation/results/<name>.jsonl`, one
-JSON record per model (or alpha, or bootstrap CI) per run. The existing
-RetailRocket ALS job (`jobs/als-training/`) is unrelated to this and
+JSON record per model (or alpha, or bootstrap CI, or multi-seed
+summary) per run. The existing RetailRocket ALS job
+(`jobs/als-training/`) is unrelated to this and
 still needs the Docker Spark+HDFS stack -- see the RetailRocket steps
 above.
 

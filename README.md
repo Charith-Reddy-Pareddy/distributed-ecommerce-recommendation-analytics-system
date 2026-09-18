@@ -56,7 +56,11 @@ methodology.
   0.315) are near-tied; CF ranks slightly better, ALS serves **~30x
   faster** (5.6ms vs. 163ms per request) since it's a precomputed
   lookup. Both comfortably beat popularity (0.087) and content-based
-  alone (0.014).
+  alone (0.014). **A fifth model, NeuMF** (`experiments/recommendation/neural_cf/`
+  -- the only actual neural network in this project, PyTorch
+  GMF+MLP), lands between popularity and CF/ALS (Precision@10 0.109) --
+  expected on this dataset's size, not a bug; see
+  [docs/RESEARCH_REPORT.md](docs/RESEARCH_REPORT.md#algorithm-definitions).
 - **RQ3 — a modest CF+ALS blend beats either model alone**, peaking
   around α=0.25-0.5 on precision, recall, and NDCG. The freshness gap
   behind that trade-off is real: CF folds in a new event in
@@ -71,6 +75,13 @@ methodology.
   **[0.0074, 0.0117]** -- comfortably clear of zero, and the same holds
   for recall, MAP, and NDCG. Not every gap this project reports would
   survive this check; this one does.
+- **It also holds up on a different simulated population.**
+  Regenerating the interaction log from scratch at 5 seeds and
+  rerunning the full model comparison and hybrid sweep on each gives
+  the same ranking and the same best α every time: item-CF and
+  catalog-ALS both land at Precision@10 **≈0.119**, and α=0.25 stays
+  the best hybrid mix at **0.1306 ± 0.0037** vs. pure CF's
+  **0.1293 ± 0.0035** -- a small, consistent edge, not one seed's luck.
 - **RQ4 — the optimizer earns its keep, at a real cost.**
   `serving-optimizer`'s Postgres indexer cut p95 read latency
   **45%** (6.1ms → 3.4ms) for negligible write overhead. Its

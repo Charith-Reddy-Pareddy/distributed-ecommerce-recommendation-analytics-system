@@ -46,7 +46,7 @@ write-up (services, data flow, the Mermaid diagram lives in the
 
 ## Recommendation algorithms
 
-Four models are compared, all sharing the real 300-product catalog's
+Five models are compared, all sharing the real 300-product catalog's
 id space (see [Ablation studies](#ablation-studies) for why that
 matters):
 
@@ -62,6 +62,11 @@ matters):
   Spark MLlib ALS (implicit feedback), trained on a synthetic,
   catalog-native interaction log so its item ids match the other three
   models, unlike the original RetailRocket-trained model.
+- **Neural CF / NeuMF** (`experiments/recommendation/neural_cf/`) --
+  the only trained neural network in this project: a PyTorch GMF+MLP
+  fusion model (He et al., WWW 2017), trained on the same catalog-native
+  interaction log as catalog-ALS with implicit-feedback negative
+  sampling. See [Algorithm definitions](#algorithm-definitions).
 - **Hybrid CF+ALS / CF+content** (`services/recommendation-service/app/hybrid.py`,
   `experiments/recommendation/hybrid.py`) -- min-max normalized,
   alpha-weighted blend of two models' scores.
@@ -137,6 +142,57 @@ those `rank × rank` linear systems. Trains offline in batch, not on the
 request path, which is exactly the freshness/latency trade-off RQ3
 measures (a full retrain: ~4.5s on this dataset; a live CF update:
 ~0.0005ms).
+
+**Neural CF, NeuMF** (`experiments/recommendation/neural_cf/model.py`;
+He, Liao, Zhang, Nie, Hu, Chua, *Neural Collaborative Filtering*, WWW
+2017). Two embedding paths per (user, item) pair, fused before a final
+linear layer -- a learned generalization of the dot-product interaction
+ALS uses, plus a second path that can express interactions a dot
+product can't:
+
+```
+GMF(u, i) = W_gmf · ( e_u^gmf ⊙ e_i^gmf )                          # elementwise product, then linear
+MLP(u, i) = f_L( ... f_1( [e_u^mlp ; e_i^mlp] ) ... )               # concatenated, then L dense+ReLU layers
+ŷ(u, i)   = σ( W_out · [ GMF(u, i) ; MLP(u, i) ] )                  # fused, final linear layer, sigmoid
+```
+
+`e^gmf` and `e^mlp` are *separate* embedding tables per user/item (this
+project: 16-dim GMF, 16-dim MLP, MLP tower shape `32→16→8`) -- GMF and
+MLP are free to learn different latent representations of the same
+user/item, not forced to share one.
+
+Trained on implicit feedback with the same confidence framing as ALS
+above: an observed `(u, i)` pair is a positive example weighted
+`1 + α·r_ui` in the loss; `NEG_SAMPLES_PER_POSITIVE=4` items the user
+never interacted with are negative examples per positive, weighted 1.0
+(`α=1.0`, matching ALS's own default). Loss is binary cross-entropy on
+the fused logit, re-sampling negatives fresh every epoch so the model
+can't memorize one fixed negative set:
+
+```
+loss = -(1/N) Σ  w_ui · [ y_ui·log(ŷ_ui) + (1-y_ui)·log(1-ŷ_ui) ]
+```
+
+*Complexity.* One forward/backward pass over a batch of size `B` is
+`O(B · (d_gmf + d_mlp·H))`, `H` the MLP's largest hidden width --
+dominated by the MLP's dense layers, not the embedding lookups.
+Inference for one user against the full catalog is one batched forward
+pass, `O(n_items · (d_gmf + d_mlp·H))`, measured at **0.33ms/user** on
+this catalog (300 items) -- comparable to ALS's precomputed-lookup
+latency (5.6ms) despite scoring the *entire* catalog live every call,
+with no precompute step at all.
+
+*Result.* Precision@10 0.109, Recall@10 0.343, MAP@10 0.196, NDCG@10
+0.292 -- between popularity and CF/ALS, not ahead of either (see
+[RQ2 results](#rq2-model-comparison-random-split-k10-1866-test-users)).
+Expected, not a bug: NeuMF's extra representational flexibility over a
+closed-form factorization needs more training data to pay off than
+this project's ~25K training pairs provides, and ALS's implicit-ALS
+objective is already a strong, well-matched inductive bias for exactly
+this kind of sparse implicit-feedback data. A larger interaction log
+(e.g. the RetailRocket dataset the RetailRocket-trained ALS job uses --
+different id space, not directly comparable here) is the standard
+setting where NeuMF-style models earn their extra capacity.
 
 **Anomaly detection, Welford's online algorithm**
 (`jobs/spark-streaming/session_and_anomaly.py`). Per-product running
@@ -273,6 +329,7 @@ full stack (`docker compose up`).
 | Item-CF (production code) | 0.118 | 0.374 | **0.224** | **0.327** | 163ms |
 | Content-based (TF-IDF) | 0.014 | 0.044 | 0.012 | 0.028 | 0.06ms |
 | Catalog-ALS | **0.119** | **0.376** | 0.211 | 0.315 | **5.6ms** |
+| Neural CF (NeuMF) | 0.109 | 0.343 | 0.196 | 0.292 | 0.33ms |
 
 CF and ALS are nearly tied on precision/recall; CF ranks slightly
 better (MAP/NDCG), ALS serves **~30x faster** since it's a
@@ -280,7 +337,14 @@ precomputed lookup rather than live cosine recomputation over the full
 candidate set. Both comfortably beat popularity and content-based
 alone -- content-based's weak standalone performance suggests category/
 brand/description similarity alone is a poor proxy for this catalog's
-actual purchase patterns.
+actual purchase patterns. Neural CF lands between popularity and
+CF/ALS on every quality metric -- ahead of a non-personalized ranking,
+but not ahead of either classical collaborative-filtering method on
+this dataset (see [Algorithm definitions](#algorithm-definitions) for
+why that's an expected result of dataset size, not a training bug).
+Its per-request latency (0.33ms) is close to ALS's despite scoring the
+whole catalog live on every call, with no precomputed lookup table at
+all.
 
 ### RQ3: hybrid blend (same split, alpha sweep)
 
@@ -336,6 +400,43 @@ reported elsewhere in this document -- several of the ablation deltas
 above are small enough that the same check would plausibly swallow
 them in noise, and that's an honest possible outcome of this method,
 not a failure of it -- but for the headline RQ3 result, it holds up.
+
+### Multi-seed robustness check
+
+The bootstrap above answers "is this gap real for *this* simulated
+population." A separate question: does the whole result hold up
+against a *different* simulated population? `experiments/recommendation/
+multi_seed.py` regenerates the interaction log and train/test split
+from scratch at 5 seeds (1, 7, 21, 42, 100 -- 42 is the canonical run
+used everywhere else in this document) and reruns the full model
+comparison and hybrid sweep at each, reporting mean ± sample std
+across the 5 runs instead of one seed's point estimate.
+
+**Model comparison, mean ± std (Precision@10):**
+
+| Model | Precision@10 |
+|---|---|
+| Popularity | 0.0876 ± 0.0022 |
+| Item-CF | 0.1195 ± 0.0037 |
+| Content-based | 0.0156 ± 0.0010 |
+| Catalog-ALS | 0.1194 ± 0.0030 |
+
+**Hybrid CF+ALS alpha sweep, mean ± std (Precision@10):**
+
+| α | Precision@10 |
+|---|---|
+| 0.00 (pure CF) | 0.1293 ± 0.0035 |
+| 0.25 | **0.1306 ± 0.0037** |
+| 0.50 | 0.1297 ± 0.0043 |
+| 0.75 | 0.1262 ± 0.0042 |
+| 1.00 (pure ALS) | 0.1194 ± 0.0030 |
+
+The ranking of models and the best alpha (0.25) are both unchanged
+from the single-seed numbers above, and the spread across seeds
+(std ≈ 0.003-0.004, versus a ≈0.01 gap between α=0.25 and pure CF) is
+small relative to the effects being measured. Full per-metric,
+per-seed values are in
+`experiments/recommendation/results/multi_seed_summary.jsonl`.
 
 ### RQ3: freshness vs. latency
 
@@ -545,18 +646,17 @@ so there's less reason left not to raise it toward 50.
   expected once traffic scaled alongside catalog size (142s → 358s,
   3,000 → 5,000 items). Not measured past 5,000 items here -- see
   [Future work](#future-work).
-- **Single-host, single-run measurements.** Everything here was
-  measured once, on one Apple Silicon Mac, under Docker Desktop
-  resource limits, competing with this session's own other testing
-  activity at times. The recommendation-quality metrics now carry
-  bootstrap confidence intervals (see
-  [Statistical significance](#statistical-significance-bootstrap-confidence-intervals)
-  above), but that resamples the one fixed test-user split it was
-  measured on -- it doesn't cover variance from a different random
-  seed generating a different interaction log entirely (see
-  [Future work](#future-work)). The throughput, optimizer, and
-  fault-tolerance numbers still have neither: single trials, no CIs.
-
+- **Single-host, single-run measurements (recommendation quality
+  excepted).** Everything here was measured on one Apple Silicon Mac,
+  under Docker Desktop resource limits, competing with this session's
+  own other testing activity at times. The recommendation-quality
+  metrics now carry both a bootstrap CI within one fixed test split
+  (see [Statistical significance](#statistical-significance-bootstrap-confidence-intervals))
+  and a 5-seed rerun across differently-generated populations (see
+  [Multi-seed robustness check](#multi-seed-robustness-check)) -- the
+  two together cover sampling variance and population variance. The
+  throughput, optimizer, and fault-tolerance numbers still have
+  neither: single trials, no CIs, no reruns.
 - **Optimizer experiments are short, targeted bursts**, not sustained
   production-scale traffic -- real effect sizes at higher, sustained
   load are plausibly different (likely larger for the Postgres index,
@@ -564,10 +664,10 @@ so there's less reason left not to raise it toward 50.
 
 ## Future work
 
-- Repeat key experiments (model comparison, hybrid sweep) at multiple
-  random seeds and report mean ± std -- bootstrap CIs (above) capture
-  sampling variance within one fixed test split, not variance from a
-  differently-seeded interaction log.
+- Apply the same bootstrap-CI and multi-seed treatment to the
+  throughput, optimizer, and fault-tolerance experiments -- currently
+  single trials with no variance estimate, unlike the recommendation
+  metrics.
 - Extend the temporal evaluation to actually use the reserved
   validation week for early stopping / hyperparameter selection,
   rather than only train/test.
