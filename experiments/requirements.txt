@@ -3,3 +3,4 @@ pandas==2.2.3
 pyarrow==21.0.0
 pyspark==3.5.3
 setuptools
+scikit-learn==1.9.1

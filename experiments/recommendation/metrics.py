@@ -47,6 +47,25 @@ def ndcg_at_k(recommended, actual, k):
     return dcg / idcg if idcg > 0 else 0.0
 
 
+def evaluate_per_user(user_recommendations, user_actuals, k=10):
+    """Same inputs as evaluate(). Returns dict[user_id -> {"precision",
+    "recall", "map", "ndcg"}] -- the per-user values evaluate() averages,
+    exposed separately so callers that need the underlying distribution
+    (e.g. bootstrap confidence intervals, experiments/recommendation/
+    bootstrap_ci.py) don't have to recompute it or reimplement scoring.
+    """
+    per_user = {}
+    for user_id, actual in user_actuals.items():
+        recommended = user_recommendations.get(user_id, [])
+        per_user[user_id] = {
+            "precision": precision_at_k(recommended, actual, k),
+            "recall": recall_at_k(recommended, actual, k),
+            "map": average_precision_at_k(recommended, actual, k),
+            "ndcg": ndcg_at_k(recommended, actual, k),
+        }
+    return per_user
+
+
 def evaluate(user_recommendations, user_actuals, k=10):
     """user_recommendations: dict[user_id -> ranked list of item ids].
     user_actuals: dict[user_id -> set of held-out item ids].
@@ -54,21 +73,14 @@ def evaluate(user_recommendations, user_actuals, k=10):
     Only evaluates users present in user_actuals. Returns per-metric
     averages plus the number of users evaluated.
     """
-    precisions, recalls, aps, ndcgs = [], [], [], []
-    for user_id, actual in user_actuals.items():
-        recommended = user_recommendations.get(user_id, [])
-        precisions.append(precision_at_k(recommended, actual, k))
-        recalls.append(recall_at_k(recommended, actual, k))
-        aps.append(average_precision_at_k(recommended, actual, k))
-        ndcgs.append(ndcg_at_k(recommended, actual, k))
-
-    n = len(precisions)
+    per_user = evaluate_per_user(user_recommendations, user_actuals, k)
+    n = len(per_user)
     if n == 0:
         return {"precision": 0.0, "recall": 0.0, "map": 0.0, "ndcg": 0.0, "n_users": 0}
     return {
-        "precision": sum(precisions) / n,
-        "recall": sum(recalls) / n,
-        "map": sum(aps) / n,
-        "ndcg": sum(ndcgs) / n,
+        "precision": sum(v["precision"] for v in per_user.values()) / n,
+        "recall": sum(v["recall"] for v in per_user.values()) / n,
+        "map": sum(v["map"] for v in per_user.values()) / n,
+        "ndcg": sum(v["ndcg"] for v in per_user.values()) / n,
         "n_users": n,
     }
