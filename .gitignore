@@ -14,6 +14,7 @@ data/interactions*.parquet
 experiments/recommendation/catalog_als/model/
 experiments/recommendation/catalog_als/recommendations.parquet
 experiments/recommendation/catalog_als/recommendations.jsonl
+experiments/recommendation/neural_cf/model.pt
 spark-warehouse/
 derby.log
 metastore_db/

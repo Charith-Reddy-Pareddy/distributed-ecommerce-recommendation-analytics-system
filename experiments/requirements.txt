@@ -1,6 +1,9 @@
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 numpy==1.26.4
 pandas==2.2.3
 pyarrow==21.0.0
 pyspark==3.5.3
 setuptools
 scikit-learn==1.9.1
+torch==2.14.0
