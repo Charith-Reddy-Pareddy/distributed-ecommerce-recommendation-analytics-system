@@ -65,6 +65,12 @@ methodology.
   train/test split also drops both models' precision ~40% versus the
   random 80/20 split used elsewhere -- the random split was
   optimistic.
+- **The CF+ALS blend's edge over pure CF is real, not noise.**
+  Bootstrapping (1,000 resamples) the α=0.25 hybrid against pure CF
+  over the same held-out users gives Precision@10 **+0.0095**, 95% CI
+  **[0.0074, 0.0117]** -- comfortably clear of zero, and the same holds
+  for recall, MAP, and NDCG. Not every gap this project reports would
+  survive this check; this one does.
 - **RQ4 — the optimizer earns its keep, at a real cost.**
   `serving-optimizer`'s Postgres indexer cut p95 read latency
   **45%** (6.1ms → 3.4ms) for negligible write overhead. Its
@@ -90,7 +96,7 @@ methodology.
   precompute itself isn't free (1s → 142s → 358s at those same
   scales), an honest limit on this approach, not hidden -- see
   [Key challenges](#key-challenges).
-- **70 unit tests + 14 integration tests**, all passing, and several
+- **79 unit tests + 14 integration tests**, all passing, and several
   real bugs found and fixed while building this: a corrupted
   multiprocessing state after repeated force-kills, a Kafka consumer
   that goes silently idle with nothing in the logs to say so, and
@@ -267,7 +273,7 @@ HBase point lookup:              ~10ms average over the REST layer
 Product catalog:                 300 Amazon products
 Optimizer Postgres p95:          6.14ms -> 3.38ms after auto-indexing (-45%)
 hdfs-sink crash recovery:        40/40 tracked events recovered, zero loss
-Test suite:                       70 unit tests + 14 integration tests, all passing
+Test suite:                       79 unit tests + 14 integration tests, all passing
 CF similar-items (300 items):     live p95 8ms -> cached p95 0.002ms (5,133x)
 CF similar-items (5,000 items):   live p95 90ms -> cached p95 0.054ms (1,648x)
 ```

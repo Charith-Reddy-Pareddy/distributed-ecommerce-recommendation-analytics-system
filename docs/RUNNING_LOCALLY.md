@@ -102,12 +102,15 @@ Then generate the synthetic interaction log, split it, and evaluate:
 ./.venv/bin/python experiments/recommendation/split_interactions.py
 ./.venv/bin/python experiments/recommendation/offline_models.py       # popularity, item-CF, content-based
 ./.venv/bin/python experiments/recommendation/catalog_als/train.py    # catalog-native ALS
+./.venv/bin/python experiments/recommendation/hybrid.py               # CF+ALS / CF+content alpha sweeps
+./.venv/bin/python experiments/recommendation/bootstrap_ci.py         # bootstrap CIs on the above
 ```
 
-Results land in `experiments/recommendation/results/offline_models.jsonl`,
-one JSON record per model per run. The existing RetailRocket ALS job
-(`jobs/als-training/`) is unrelated to this and still needs the Docker
-Spark+HDFS stack -- see the RetailRocket steps above.
+Results land in `experiments/recommendation/results/<name>.jsonl`, one
+JSON record per model (or alpha, or bootstrap CI) per run. The existing
+RetailRocket ALS job (`jobs/als-training/`) is unrelated to this and
+still needs the Docker Spark+HDFS stack -- see the RetailRocket steps
+above.
 
 ## Monitoring: Prometheus + Grafana
 
@@ -142,7 +145,7 @@ pytest
 ```
 
 CI (`.github/workflows/ci.yml`) runs `compileall` and this suite on
-every push and pull request. **70 unit tests** as of this writing.
+every push and pull request. **79 unit tests** as of this writing.
 
 `tests/integration/` covers the opposite: Kafka event-flow (does a
 posted event really reach a downstream consumer's live state), DB

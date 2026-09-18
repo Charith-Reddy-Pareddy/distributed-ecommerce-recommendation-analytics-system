@@ -243,6 +243,20 @@ NDCG@k = DCG@k / IDCG@k
 All four are computed per user, then averaged (unweighted, so heavy and
 light users count equally) across every user with a held-out split.
 
+**Bootstrap confidence intervals.**
+`experiments/recommendation/bootstrap.py` implements the percentile
+method: resample the test users with replacement (the sampling unit is
+the user, not a raw per-metric value, since one user's Precision@10
+isn't an independent draw the way a coin flip is), recompute the mean
+over each resample, repeat 1,000 times, and take the 2.5th/97.5th
+percentiles of the resulting distribution as the 95% CI. The
+CF-vs-hybrid comparison uses a paired variant instead of two
+independent CIs -- the *same* resampled user indices are applied to
+both models each iteration, preserving the correlation between them
+(both are scored on the same users), which is what lets the CI on
+their *difference* be narrower than either model's own CI would
+suggest.
+
 **Reproducing a run.** No Docker needed for the recommendation
 experiments -- local-mode PySpark. See
 [docs/RUNNING_LOCALLY.md](RUNNING_LOCALLY.md#recommendation-experiments).
@@ -286,6 +300,42 @@ A blend around **α=0.25-0.5 beats both pure CF and pure ALS** on every
 metric. The CF+content blend, by contrast, only degrades monotonically
 as content weight increases (0.1266 → 0.0145 from α=0 to α=1) --
 consistent with content-based's weak standalone showing above.
+
+### Statistical significance (bootstrap confidence intervals)
+
+Point estimates alone don't say whether an observed gap reflects a
+real effect or just which users happened to land in the held-out test
+set. `experiments/recommendation/bootstrap_ci.py` answers that with a
+percentile bootstrap (1,000 resamples over the 1,866 test users) for
+every metric in the model comparison and the hybrid alpha sweep, plus
+a paired bootstrap -- the same resampled user indices applied to both
+models each iteration, to preserve the pairing -- for the CF-vs-hybrid
+gap specifically.
+
+**Model comparison, 95% CI:**
+
+| Model | Precision@10 | Recall@10 | MAP@10 | NDCG@10 |
+|---|---|---|---|---|
+| Popularity | 0.0869 [0.0827, 0.0909] | 0.2724 [0.2593, 0.2854] | 0.1080 [0.1002, 0.1152] | 0.1899 [0.1806, 0.1995] |
+| Item-CF | 0.1175 [0.1133, 0.1219] | 0.3742 [0.3609, 0.3880] | 0.2244 [0.2142, 0.2349] | 0.3266 [0.3145, 0.3388] |
+| Content-based | 0.0144 [0.0126, 0.0161] | 0.0436 [0.0372, 0.0492] | 0.0124 [0.0103, 0.0144] | 0.0277 [0.0241, 0.0314] |
+
+**CF vs. hybrid (α=0.25), paired bootstrap on the difference:**
+
+| Metric | CF | Hybrid | Δ | 95% CI | Distinguishable from 0? |
+|---|---|---|---|---|---|
+| Precision@10 | 0.1175 | 0.1271 | +0.0095 | [0.0074, 0.0117] | Yes |
+| Recall@10 | 0.3742 | 0.4002 | +0.0260 | [0.0185, 0.0335] | Yes |
+| MAP@10 | 0.2244 | 0.2374 | +0.0130 | [0.0093, 0.0168] | Yes |
+| NDCG@10 | 0.3266 | 0.3450 | +0.0183 | [0.0140, 0.0226] | Yes |
+
+Every one of the four metrics' 95% CI sits entirely above zero -- the
+hybrid's edge over pure CF is real, not sampling noise from this
+particular test-user split. That won't necessarily hold for every gap
+reported elsewhere in this document -- several of the ablation deltas
+above are small enough that the same check would plausibly swallow
+them in noise, and that's an honest possible outcome of this method,
+not a failure of it -- but for the headline RQ3 result, it holds up.
 
 ### RQ3: freshness vs. latency
 
@@ -498,9 +548,15 @@ so there's less reason left not to raise it toward 50.
 - **Single-host, single-run measurements.** Everything here was
   measured once, on one Apple Silicon Mac, under Docker Desktop
   resource limits, competing with this session's own other testing
-  activity at times. None of these numbers include confidence
-  intervals or repeated trials; they establish direction and rough
-  magnitude, not statistically rigorous point estimates.
+  activity at times. The recommendation-quality metrics now carry
+  bootstrap confidence intervals (see
+  [Statistical significance](#statistical-significance-bootstrap-confidence-intervals)
+  above), but that resamples the one fixed test-user split it was
+  measured on -- it doesn't cover variance from a different random
+  seed generating a different interaction log entirely (see
+  [Future work](#future-work)). The throughput, optimizer, and
+  fault-tolerance numbers still have neither: single trials, no CIs.
+
 - **Optimizer experiments are short, targeted bursts**, not sustained
   production-scale traffic -- real effect sizes at higher, sustained
   load are plausibly different (likely larger for the Postgres index,
@@ -509,8 +565,9 @@ so there's less reason left not to raise it toward 50.
 ## Future work
 
 - Repeat key experiments (model comparison, hybrid sweep) at multiple
-  random seeds to get real confidence intervals instead of point
-  estimates.
+  random seeds and report mean ± std -- bootstrap CIs (above) capture
+  sampling variance within one fixed test split, not variance from a
+  differently-seeded interaction log.
 - Extend the temporal evaluation to actually use the reserved
   validation week for early stopping / hyperparameter selection,
   rather than only train/test.
