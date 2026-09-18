@@ -26,16 +26,23 @@ TEST_FRACTION = 0.2
 SEED = 42
 
 
-def weighted_interactions(event_weights=None):
+def weighted_interactions(event_weights=None, events=None):
     """event_weights defaults to production's view/cart/purchase weights
     (services/recommendation-service/app/model.py); pass a different dict
     to run the same pipeline under an alternative weighting scheme (RQ1).
+
+    events defaults to reading the canonical INTERACTIONS_PATH; pass a
+    DataFrame directly (e.g. from generate_interactions.generate_events)
+    to weight a differently-seeded log in memory without touching that
+    file -- see experiments/recommendation/multi_seed.py.
     """
     if event_weights is None:
         model = load_app_module("recommendation-service", "model", "recsvc_app")
         event_weights = model.EVENT_WEIGHTS
 
-    events = pd.read_parquet(INTERACTIONS_PATH)
+    if events is None:
+        events = pd.read_parquet(INTERACTIONS_PATH)
+    events = events.copy()
     events["weight"] = events["event_type"].map(event_weights)
     return (
         events.groupby(["user_id", "product_id"], as_index=False)["weight"]
