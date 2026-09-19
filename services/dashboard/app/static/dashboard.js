@@ -1,7 +1,18 @@
 function escapeHtml(str) {
-  const div = document.createElement("div");
-  div.textContent = str == null ? "" : String(str);
-  return div.innerHTML;
+  // Used both as text content (<strong>${escapeHtml(x)}</strong>) and
+  // inside double-quoted attribute values (src="${escapeHtml(x)}") --
+  // the DOM textContent/innerHTML round-trip this used to do only
+  // escapes &, <, > (what text-node serialization needs), not double
+  // quotes, so a value containing `"` could break out of an attribute
+  // it was meant to be safely contained in. Escaping all five
+  // characters here makes it safe in both contexts uniformly.
+  if (str == null) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 }
 
 async function getJSON(url, options) {
@@ -31,7 +42,7 @@ function renderProducts(container, products, { append = false } = {}) {
       </div>
       <div class="product-side meta">
         id ${p.id}<br>
-        ${amazonUrl ? `<a href="${amazonUrl}" target="_blank" rel="noopener noreferrer">View on Amazon &rarr;</a>` : ""}
+        ${amazonUrl ? `<a href="${escapeHtml(amazonUrl)}" target="_blank" rel="noopener noreferrer">View on Amazon &rarr;</a>` : ""}
       </div>
     `;
     container.appendChild(div);
