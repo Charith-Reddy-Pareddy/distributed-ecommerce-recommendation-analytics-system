@@ -107,7 +107,7 @@ methodology.
   precompute itself isn't free (1s → 142s → 358s at those same
   scales), an honest limit on this approach, not hidden -- see
   [Key challenges](#key-challenges).
-- **79 unit tests + 14 integration tests**, all passing, and several
+- **88 unit tests + 14 integration tests**, all passing, and several
   real bugs found and fixed while building this: a corrupted
   multiprocessing state after repeated force-kills, a Kafka consumer
   that goes silently idle with nothing in the logs to say so, and
@@ -284,7 +284,7 @@ HBase point lookup:              ~10ms average over the REST layer
 Product catalog:                 300 Amazon products
 Optimizer Postgres p95:          6.14ms -> 3.38ms after auto-indexing (-45%)
 hdfs-sink crash recovery:        40/40 tracked events recovered, zero loss
-Test suite:                       79 unit tests + 14 integration tests, all passing
+Test suite:                       88 unit tests + 14 integration tests, all passing
 CF similar-items (300 items):     live p95 8ms -> cached p95 0.002ms (5,133x)
 CF similar-items (5,000 items):   live p95 90ms -> cached p95 0.054ms (1,648x)
 ```

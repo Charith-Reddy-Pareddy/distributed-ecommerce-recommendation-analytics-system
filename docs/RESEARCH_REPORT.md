@@ -535,35 +535,49 @@ periodic rebuild itself too slow -- not attempted here, see
 ### Systems experiments
 
 **Throughput** (`experiments/throughput/`, paced load against the live
-stack, full consumer pipeline attached):
+stack, full consumer pipeline attached). Run twice, three weeks apart
+(2026-08-28 and 2026-09-19, the latter after this stack had
+accumulated substantially more Kafka history from other testing) --
+both shown, since the pattern reproducing independently is more
+informative than either run alone:
 
-| Target rate (events/sec) | Achieved | p50 latency | p99 latency |
-|---|---|---|---|
-| 100 | 73.4 | 38.0ms | 5.0s |
-| 250 | 147.6 | 20.2ms | 6.0s |
-| 500 | 305.9 | 25.2ms | 4.2s |
-| 750 | 201.1 | 540.8ms | 6.9s |
-| 1000 | 332.9 | 341.7ms | 5.9s |
-| 1500 | 395.1 | 364.1ms | 5.1s |
+| Target rate (events/sec) | Achieved (08-28) | Achieved (09-19) | p50 (09-19) | p99 (09-19) |
+|---|---|---|---|---|
+| 100 | 73.4 | 70.8 | 4.9ms | 5.3s |
+| 250 | 147.6 | 162.4 | 6.5ms | 4.9s |
+| 500 | 305.9 | 253.9 | 16.1ms | 5.5s |
+| 750 | 201.1 | 273.6 | 103.3ms | 7.7s |
+| 1000 | 332.9 | 340.0 | 305.4ms | 5.4s |
+| 1500 | 395.1 | 368.5 | 258.3ms | 5.8s |
 
-Achieved throughput never scales cleanly with target rate and is
-noisy under load (750's achieved rate is *below* 500's) -- real
-saturation behavior with heavy tail latency even at modest target
-rates, once a full downstream consumer pipeline is attached. This is
-well below `scripts/kafka_load_test.py`'s own unpaced, no-downstream-
-consumer benchmark of 500-650+ events/sec, because that test measures
-a fundamentally different thing (raw ingestion capacity vs. sustained
-throughput with consumers competing for resources).
+Both runs show the same qualitative pattern: achieved throughput never
+scales cleanly with target rate (08-28's 750 dipped *below* its own
+500; 09-19 was monotonic but still plateaued well short of target),
+and heavy tail latency (multi-second p99) shows up even at the lowest
+target rate, not just under heavy load -- real saturation behavior
+with a persistent slow-outlier tail, once a full downstream consumer
+pipeline is attached. Both runs stay well below
+`scripts/kafka_load_test.py`'s own unpaced, no-downstream-consumer
+benchmark of 500-650+ events/sec, because that test measures a
+fundamentally different thing (raw ingestion capacity vs. sustained
+throughput with consumers competing for resources). Zero request
+failures at any rate in either run -- the system degrades via latency
+and consumer lag, not errors.
 
 **Fault tolerance** (`experiments/fault_tolerance/`):
 
-- `recommendation-service`: `/health` recovers in ~1s after a kill;
-  the observable top-10 popularity list stabilizes ~4s after that on a
-  small topic (this is a proxy for replay completion, not
-  confirmation of it -- see [Limitations](#limitations)).
+- `recommendation-service`: `/health` recovers in ~1s after a kill.
+  The observable top-10 popularity list stabilized 4.18s after that on
+  2026-08-28's smaller topic, and 8.13s after that on 2026-09-19's
+  (this is a proxy for replay completion, not confirmation of it --
+  see [Limitations](#limitations)). The roughly 2x growth across three
+  weeks is consistent with this design's own documented cost: a fresh
+  consumer group replays the *entire* topic from scratch on every
+  restart, so stabilization time should be expected to track total
+  accumulated topic history, not stay constant.
 - `hdfs-sink`: 40/40 tracked events survived a crash with **zero
-  loss** -- the persistent, committed-offset consumer design works as
-  intended.
+  loss** in both runs -- the persistent, committed-offset consumer
+  design works as intended.
 - Elasticsearch: genuinely loses its index when its *container* is
   replaced (confirmed via `index_not_found_exception`, not just a
   process kill, which reuses the same container filesystem and proves
@@ -657,8 +671,12 @@ improving past 50 is untested and would need a wider sweep.
   and a 5-seed rerun across differently-generated populations (see
   [Multi-seed robustness check](#multi-seed-robustness-check)) -- the
   two together cover sampling variance and population variance. The
-  throughput, optimizer, and fault-tolerance numbers still have
-  neither: single trials, no CIs, no reruns.
+  throughput and fault-tolerance experiments have since been run twice
+  each, three weeks apart, and reproduced the same qualitative pattern
+  both times (see [Systems experiments](#systems-experiments)) -- real
+  signal that the results aren't a fluke of one run, but still not a
+  formal CI or a controlled multi-seed design. The optimizer numbers
+  remain a single trial: no reruns yet.
 - **Optimizer experiments are short, targeted bursts**, not sustained
   production-scale traffic -- real effect sizes at higher, sustained
   load are plausibly different (likely larger for the Postgres index,
@@ -667,9 +685,11 @@ improving past 50 is untested and would need a wider sweep.
 ## Future work
 
 - Apply the same bootstrap-CI and multi-seed treatment to the
-  throughput, optimizer, and fault-tolerance experiments -- currently
-  single trials with no variance estimate, unlike the recommendation
-  metrics.
+  throughput, optimizer, and fault-tolerance experiments -- still no
+  formal variance estimate, unlike the recommendation metrics.
+  Throughput and fault-tolerance have each been run twice now (see
+  [Limitations](#limitations)), which is informal reproducibility
+  evidence at best, not a substitute for this.
 - Extend the temporal evaluation to actually use the reserved
   validation week for early stopping / hyperparameter selection,
   rather than only train/test.
