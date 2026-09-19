@@ -29,8 +29,22 @@ BATCH_MAX_SECONDS = float(os.getenv("BATCH_MAX_SECONDS", "30"))
 def _event_day(event: dict) -> str:
     created_at = event.get("created_at")
     if created_at:
-        return datetime.fromisoformat(created_at).date().isoformat()
+        try:
+            return datetime.fromisoformat(created_at).date().isoformat()
+        except (TypeError, ValueError) as e:
+            log.error("bad created_at %r, bucketing under today's date instead: %r", created_at, e)
     return datetime.now(timezone.utc).date().isoformat()
+
+
+def _parse_message(raw_value: bytes | None) -> dict | None:
+    """Returns None and logs on malformed input instead of raising -- see
+    the caller's comment on why an uncaught exception here is unrecoverable
+    for this specific consumer."""
+    try:
+        return json.loads(raw_value)
+    except (json.JSONDecodeError, TypeError) as e:
+        log.error("skipping malformed message: %r", e)
+        return None
 
 
 def _flush_batch(hdfs_client: InsecureClient, batch: list[dict]) -> None:
@@ -74,7 +88,18 @@ def run() -> None:
             msg = consumer.poll(timeout=1.0)
 
             if msg is not None and not msg.error():
-                batch.append(json.loads(msg.value()))
+                # A malformed message must never take the process down --
+                # offsets only commit once a whole batch (including this
+                # message) has been durably flushed, so an uncaught
+                # exception here would crash before committing, and a
+                # restart would just re-fetch and re-crash on the exact
+                # same message forever (this consumer never replays from
+                # scratch like recommendation-service's does -- see the
+                # module docstring). Log and skip instead, matching every
+                # other Kafka consumer in this codebase.
+                parsed = _parse_message(msg.value())
+                if parsed is not None:
+                    batch.append(parsed)
 
             elapsed = time.monotonic() - batch_started_at
             if batch and (len(batch) >= BATCH_MAX_SIZE or elapsed >= BATCH_MAX_SECONDS):
