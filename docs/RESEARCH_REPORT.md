@@ -178,9 +178,11 @@ loss = -(1/N) Σ  w_ui · [ y_ui·log(ŷ_ui) + (1-y_ui)·log(1-ŷ_ui) ]
 dominated by the MLP's dense layers, not the embedding lookups.
 Inference for one user against the full catalog is one batched forward
 pass, `O(n_items · (d_gmf + d_mlp·H))`, measured at **0.33ms/user** on
-this catalog (300 items) -- comparable to ALS's precomputed-lookup
-latency (5.6ms) despite scoring the *entire* catalog live every call,
-with no precompute step at all.
+this catalog (300 items) -- comparable to, and on a later measurement
+faster than, ALS's own precomputed-lookup latency (5.6-9.0ms, two runs
+-- see [RQ2 results](#rq2-model-comparison-random-split-k10-1866-test-users))
+despite scoring the *entire* catalog live every call, with no
+precompute step at all.
 
 *Result.* Precision@10 0.109, Recall@10 0.343, MAP@10 0.196, NDCG@10
 0.292 -- between popularity and CF/ALS, not ahead of either (see
@@ -328,20 +330,28 @@ full stack (`docker compose up`).
 | Popularity | 0.087 | 0.272 | 0.108 | 0.190 | ~0ms |
 | Item-CF (production code) | 0.118 | 0.374 | **0.224** | **0.327** | 163ms |
 | Content-based (TF-IDF) | 0.014 | 0.044 | 0.012 | 0.028 | 0.06ms |
-| Catalog-ALS | **0.119** | **0.376** | 0.211 | 0.315 | **5.6ms** |
+| Catalog-ALS | **0.119** | **0.376** | 0.211 | 0.315 | **5.6-9.0ms**\* |
 | Neural CF (NeuMF) | 0.109 | 0.343 | 0.196 | 0.292 | 0.33ms |
 
+\* Run twice, 2026-08-25 (5.64ms) and 2026-09-16 (9.03ms) -- same
+model, same eval methodology (`experiments/recommendation/results/offline_models.jsonl`
+has both), a 60% difference on different macOS builds (26.6.2 vs
+27.0). Plausibly measurement noise rather than a real regression, but
+nothing here rules that out, so both are reported rather than picking
+one.
+
 CF and ALS are nearly tied on precision/recall; CF ranks slightly
-better (MAP/NDCG), ALS serves **~30x faster** since it's a
-precomputed lookup rather than live cosine recomputation over the full
-candidate set. Both comfortably beat popularity and content-based
-alone -- content-based's weak standalone performance suggests category/
-brand/description similarity alone is a poor proxy for this catalog's
-actual purchase patterns. Neural CF lands between popularity and
-CF/ALS on every quality metric -- ahead of a non-personalized ranking,
-but not ahead of either classical collaborative-filtering method on
-this dataset (see [Algorithm definitions](#algorithm-definitions) for
-why that's an expected result of dataset size, not a training bug).
+better (MAP/NDCG), ALS serves **18-29x faster** (163ms / 9.0-5.6ms)
+since it's a precomputed lookup rather than live cosine recomputation
+over the full candidate set. Both comfortably beat popularity and
+content-based alone -- content-based's weak standalone performance
+suggests category/brand/description similarity alone is a poor proxy
+for this catalog's actual purchase patterns. Neural CF lands between
+popularity and CF/ALS on every quality metric -- ahead of a
+non-personalized ranking, but not ahead of either classical
+collaborative-filtering method on this dataset (see
+[Algorithm definitions](#algorithm-definitions) for why that's an
+expected result of dataset size, not a training bug).
 Its per-request latency (0.33ms) is close to ALS's despite scoring the
 whole catalog live on every call, with no precomputed lookup table at
 all.

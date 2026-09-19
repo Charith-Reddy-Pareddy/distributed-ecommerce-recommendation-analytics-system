@@ -53,8 +53,10 @@ methodology.
   production 1/3/5 scheme.
 - **RQ2 — CF and ALS are close on quality, ALS wins on latency.**
   Item-CF (Precision@10 0.118, NDCG@10 0.327) and catalog-ALS (0.119,
-  0.315) are near-tied; CF ranks slightly better, ALS serves **~30x
-  faster** (5.6ms vs. 163ms per request) since it's a precomputed
+  0.315) are near-tied; CF ranks slightly better, ALS serves **18-29x
+  faster** (5.6-9.0ms vs. 163ms per request, two runs -- see
+  [docs/RESEARCH_REPORT.md](docs/RESEARCH_REPORT.md#rq2-model-comparison-random-split-k10-1866-test-users))
+  since it's a precomputed
   lookup. Both comfortably beat popularity (0.087) and content-based
   alone (0.014). **A fifth model, NeuMF** (`experiments/recommendation/neural_cf/`
   -- the only actual neural network in this project, PyTorch
