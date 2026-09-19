@@ -52,14 +52,45 @@ def _apply_event(event: dict) -> None:
 
 
 def consume_forever() -> None:
-    consumer = new_consumer()
+    # This runs in a background daemon thread (see start_consumer()) --
+    # an uncaught exception here just kills the thread silently, with
+    # nothing in the logs to say so and the HTTP server staying up and
+    # "healthy" the whole time. Log loudly and keep polling instead,
+    # matching the same fix already applied to recommendation-service's
+    # consumer thread (see services/recommendation-service/app/model.py
+    # and docs/ARCHITECTURE.md's trade-offs section) -- this consumer
+    # had the identical gap.
+    print("[analytics-consumer] consumer thread starting", flush=True)
+    try:
+        consumer = new_consumer()
+    except Exception as e:
+        print(f"[analytics-consumer] failed to create consumer: {e!r}", flush=True)
+        raise
+    print("[analytics-consumer] consumer created, subscribed, polling...", flush=True)
+
+    processed = 0
     try:
         while True:
-            msg = consumer.poll(timeout=1.0)
-            if msg is None or msg.error():
+            try:
+                msg = consumer.poll(timeout=1.0)
+            except Exception as e:
+                print(f"[analytics-consumer] poll() raised: {e!r}", flush=True)
                 continue
-            _apply_event(json.loads(msg.value()))
+            if msg is None:
+                continue
+            if msg.error():
+                print(f"[analytics-consumer] message error: {msg.error()}", flush=True)
+                continue
+            try:
+                _apply_event(json.loads(msg.value()))
+            except Exception as e:
+                print(f"[analytics-consumer] failed to apply event: {e!r}", flush=True)
+                continue
+            processed += 1
+            if processed % 5000 == 0:
+                print(f"[analytics-consumer] processed {processed} events so far", flush=True)
     finally:
+        print(f"[analytics-consumer] consumer thread exiting after {processed} events", flush=True)
         consumer.close()
 
 
