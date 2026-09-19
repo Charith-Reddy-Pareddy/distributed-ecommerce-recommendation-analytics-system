@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Distributed E-Commerce Recommendation Analytics System</title>
+<meta name="description" content="A distributed recommendation and analytics platform (Kafka, Spark, HBase, Cassandra, Elasticsearch) with a real experimental evaluation of recommendation quality, streaming/batch serving latency, and fault tolerance.">
+<style>
+  :root {
+    color-scheme: light;
+    --surface: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #898781;
+    --gridline: #e1e0d9;
+    --baseline: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;
+    --series-1-wash: rgba(42,120,214,0.10);
+    --series-2: #eb6834;
+    --series-3: #1baf7a;
+    --status-good: #0ca30c;
+    --status-critical: #d03b3b;
+    --code-bg: #f0efec;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface: #1a1a19;
+      --page: #0d0d0d;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted: #898781;
+      --gridline: #2c2c2a;
+      --baseline: #383835;
+      --border: rgba(255,255,255,0.10);
+      --series-1: #3987e5;
+      --series-1-wash: rgba(57,135,229,0.14);
+      --series-2: #d95926;
+      --series-3: #199e70;
+      --status-good: #0ca30c;
+      --status-critical: #e66767;
+      --code-bg: #26261f;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --gridline: #2c2c2a;
+    --baseline: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-1-wash: rgba(57,135,229,0.14);
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --status-good: #0ca30c;
+    --status-critical: #e66767;
+    --code-bg: #26261f;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    line-height: 1.55;
+  }
+  a { color: var(--series-1); }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 20px; }
+
+  header.site {
+    position: sticky; top: 0; z-index: 10;
+    background: var(--page);
+    border-bottom: 1px solid var(--border);
+  }
+  header.site .bar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 0;
+  }
+  header.site .brand { font-weight: 600; font-size: 15px; letter-spacing: 0.01em; }
+  header.site nav a {
+    color: var(--text-secondary); text-decoration: none; font-size: 14px;
+    margin-left: 20px;
+  }
+  header.site nav a:hover { color: var(--text-primary); }
+  #theme-toggle {
+    margin-left: 20px; font-size: 13px; color: var(--text-secondary);
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 10px; cursor: pointer;
+  }
+
+  .hero { padding: 56px 0 40px; }
+  .hero .kicker {
+    color: var(--text-muted); font-size: 13px; text-transform: uppercase;
+    letter-spacing: 0.08em; margin: 0 0 12px;
+  }
+  .hero h1 { font-size: 34px; line-height: 1.2; margin: 0 0 16px; max-width: 760px; }
+  .hero p.lede { color: var(--text-secondary); font-size: 17px; max-width: 680px; margin: 0 0 28px; }
+  .cta-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 40px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 16px; border-radius: 8px; font-size: 14px; font-weight: 500;
+    text-decoration: none; border: 1px solid var(--border);
+  }
+  .btn.primary { background: var(--text-primary); color: var(--page); border-color: transparent; }
+  .btn.secondary { background: var(--surface); color: var(--text-primary); }
+
+  .stat-row {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(140px,1fr));
+    gap: 1px; background: var(--border); border: 1px solid var(--border);
+    border-radius: 10px; overflow: hidden;
+  }
+  .stat-tile { background: var(--surface); padding: 18px 20px; }
+  .stat-tile .label { color: var(--text-secondary); font-size: 13px; margin-bottom: 6px; }
+  .stat-tile .value { font-size: 26px; font-weight: 600; }
+  .stat-tile .value .unit { font-size: 15px; color: var(--text-secondary); font-weight: 500; }
+
+  section { padding: 44px 0; border-top: 1px solid var(--border); }
+  section h2 { font-size: 22px; margin: 0 0 6px; }
+  section p.section-sub { color: var(--text-secondary); font-size: 15px; margin: 0 0 28px; max-width: 680px; }
+
+  .rq-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px,1fr)); gap: 16px; }
+  .rq-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .rq-card .rq-id { color: var(--series-1); font-size: 12px; font-weight: 700; letter-spacing: 0.04em; margin-bottom: 8px; }
+  .rq-card p { margin: 0; font-size: 14px; color: var(--text-secondary); }
+  .rq-card p.answer { color: var(--text-primary); margin-top: 8px; font-size: 14px; }
+
+  .arch-diagram {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 24px; overflow-x: auto;
+  }
+  .arch-diagram svg { display: block; margin: 0 auto; min-width: 640px; }
+  .arch-note { font-size: 13px; color: var(--text-muted); margin-top: 14px; }
+
+  .chart-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 24px; margin-bottom: 24px;
+  }
+  .chart-card h3 { font-size: 16px; margin: 0 0 2px; }
+  .chart-card .chart-sub { font-size: 13px; color: var(--text-muted); margin: 0 0 18px; }
+  .legend { display: flex; gap: 18px; font-size: 13px; color: var(--text-secondary); margin-bottom: 14px; }
+  .legend .key { display: inline-flex; align-items: center; gap: 6px; }
+  .legend .swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .axis-label { fill: var(--text-muted); font-size: 11px; }
+  .gridline { stroke: var(--gridline); stroke-width: 1; }
+  .baseline { stroke: var(--baseline); stroke-width: 1; }
+  .bar-rect { cursor: pointer; }
+  .bar-value { fill: var(--text-secondary); font-size: 11px; font-weight: 600; }
+  .tooltip {
+    position: absolute; pointer-events: none; background: var(--text-primary); color: var(--page);
+    font-size: 12px; padding: 6px 10px; border-radius: 6px; opacity: 0; transition: opacity 0.1s;
+    white-space: nowrap; z-index: 20; transform: translate(-50%, -100%);
+  }
+  .tooltip.show { opacity: 1; }
+
+  table.data-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
+  table.data-table th, table.data-table td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--gridline); }
+  table.data-table th { color: var(--text-muted); font-weight: 500; }
+  table.data-table td.num, table.data-table th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  details.table-toggle { margin-top: 14px; }
+  details.table-toggle summary { font-size: 13px; color: var(--text-secondary); cursor: pointer; }
+
+  .findings-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+  .findings-list li {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 18px; font-size: 14px; color: var(--text-secondary);
+  }
+  .findings-list li strong { color: var(--text-primary); }
+
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
+    padding: 3px 10px; border-radius: 999px;
+  }
+  .badge.good { background: rgba(12,163,12,0.12); color: var(--status-good); }
+  .badge.critical { background: rgba(208,59,59,0.12); color: var(--status-critical); }
+
+  code { background: var(--code-bg); padding: 1px 6px; border-radius: 4px; font-size: 0.9em; }
+
+  footer { padding: 40px 0 60px; border-top: 1px solid var(--border); }
+  footer .foot-grid { display: flex; flex-wrap: wrap; gap: 32px; justify-content: space-between; }
+  footer h4 { font-size: 13px; color: var(--text-muted); margin: 0 0 10px; text-transform: uppercase; letter-spacing: 0.06em; }
+  footer ul { list-style: none; margin: 0; padding: 0; }
+  footer li { margin-bottom: 6px; }
+  footer a { color: var(--text-secondary); text-decoration: none; font-size: 14px; }
+  footer a:hover { color: var(--text-primary); }
+  footer .colophon { margin-top: 32px; font-size: 12px; color: var(--text-muted); }
+
+  @media (max-width: 640px) {
+    .hero h1 { font-size: 27px; }
+    header.site nav { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="site">
+  <div class="wrap bar">
+    <div class="brand">E-Commerce Recommendation Analytics</div>
+    <nav>
+      <a href="#research">Research</a>
+      <a href="#results">Results</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#findings">Findings</a>
+      <button id="theme-toggle" type="button" aria-label="Toggle dark mode">&#9728;&#xFE0E; / &#9789;&#xFE0E;</button>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <section class="hero" style="border-top:none;">
+    <p class="kicker">Distributed systems &middot; recommender systems &middot; research project</p>
+    <h1>How does a distributed platform combine real-time events, batch learning, and workload-aware storage while keeping serving latency low?</h1>
+    <p class="lede">
+      An event-driven e-commerce platform (Kafka, Spark, HBase, Cassandra, Elasticsearch)
+      built to actually answer that question, not just implement the stack &mdash;
+      four research questions, five recommendation models compared head-to-head,
+      and fault-tolerance and throughput experiments run against the live system,
+      not simulated.
+    </p>
+    <div class="cta-row">
+      <a class="btn primary" href="https://github.com/Charith-Reddy-Pareddy/distributed-ecommerce-recommendation-analytics-system">View source on GitHub</a>
+      <a class="btn secondary" href="https://github.com/Charith-Reddy-Pareddy/distributed-ecommerce-recommendation-analytics-system/blob/main/docs/RESEARCH_REPORT.md">Read the full research report</a>
+      <a class="btn secondary" href="https://github.com/Charith-Reddy-Pareddy/distributed-ecommerce-recommendation-analytics-system/blob/main/docs/ARCHITECTURE.md">Architecture deep-dive</a>
+    </div>
+    <div class="stat-row">
+      <div class="stat-tile"><div class="label">Recommendation models compared</div><div class="value">5</div></div>
+      <div class="stat-tile"><div class="label">Services</div><div class="value">9</div></div>
+      <div class="stat-tile"><div class="label">Test suite</div><div class="value">119</div></div>
+      <div class="stat-tile"><div class="label">Fault-injection experiments</div><div class="value">3</div></div>
+    </div>
+  </section>
+
+  <section id="research">
+    <h2>Research questions</h2>
+    <p class="section-sub">The project's architecture exists to answer these &mdash; each one backed by a reproducible experiment under <code>experiments/</code>, not just a design decision.</p>
+    <div class="rq-grid">
+      <div class="rq-card">
+        <div class="rq-id">RQ1</div>
+        <p>How does event-weighted implicit feedback (view=1, cart=3, purchase=5) affect recommendation quality versus alternative weighting schemes?</p>
+        <p class="answer">Precision@10 moves at most ~10% relative across weighting schemes tested &mdash; item-CF actually does slightly better with flatter weights.</p>
+      </div>
+      <div class="rq-card">
+        <div class="rq-id">RQ2</div>
+        <p>How does a real-time item-item recommender compare against batch ALS on quality, latency, and freshness?</p>
+        <p class="answer">CF and ALS are nearly tied on Precision@10 (0.118 vs 0.119); ALS serves 18&ndash;29x faster as a precomputed lookup.</p>
+      </div>
+      <div class="rq-card">
+        <div class="rq-id">RQ3</div>
+        <p>What is the trade-off between recommendation freshness and serving latency in a streaming + batch architecture?</p>
+        <p class="answer">The CF neighbor cache trades a bounded staleness window for O(1) lookups &mdash; live p95 fell from 90ms to 0.054ms at 5,000 items.</p>
+      </div>
+      <div class="rq-card">
+        <div class="rq-id">RQ4</div>
+        <p>Can workload-aware database optimization reduce serving latency without excessive write/indexing overhead?</p>
+        <p class="answer">The autonomous Postgres indexer cut p95 read latency 45% (6.1ms &rarr; 3.4ms) for negligible measured write overhead.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="architecture">
+    <h2>Architecture</h2>
+    <p class="section-sub">Lambda-style: every event flows through one Kafka topic, consumed independently by a real-time (speed) path and a batch (Spark/HBase) path, with no shared database between services.</p>
+    <div class="arch-diagram">
+      <svg viewBox="0 0 900 300" role="img" aria-label="Architecture flow: client posts to event-service, which publishes to Kafka; recommendation-service, analytics-service, HDFS sink, and Spark streaming all consume independently; Spark and MapReduce feed batch ALS and HBase; recommendation-service reads HBase and product-service to serve hybrid recommendations.">
+        <text x="60" y="30" class="axis-label" font-size="12" font-weight="600">client</text>
+        <rect x="20" y="40" width="90" height="34" rx="6" fill="none" stroke="var(--baseline)"/>
+        <text x="65" y="61" text-anchor="middle" font-size="12" fill="var(--text-primary)">Client</text>
+
+        <rect x="160" y="40" width="120" height="34" rx="6" fill="none" stroke="var(--baseline)"/>
+        <text x="220" y="61" text-anchor="middle" font-size="12" fill="var(--text-primary)">event-service</text>
+
+        <rect x="330" y="40" width="110" height="34" rx="6" fill="var(--series-1-wash)" stroke="var(--series-1)"/>
+        <text x="385" y="61" text-anchor="middle" font-size="12" fill="var(--text-primary)">Kafka (events)</text>
+
+        <!-- speed layer consumers -->
+        <rect x="490" y="10" width="150" height="30" rx="6" fill="none" stroke="var(--baseline)"/>
+        <text x="565" y="29" text-anchor="middle" font-size="11" fill="var(--text-primary)">recommendation-service</text>
+
+        <rect x="490" y="48" width="150" height="30" rx="6" fill="none" stroke="var(--baseline)"/>
+        <text x="565" y="67" text-anchor="middle" font-size="11" fill="var(--text-primary)">analytics-service</text>
+
+        <rect x="490" y="86" width="150" height="30" rx="6" fill="none" stroke="var(--baseline)"/>
+        <text x="565" y="105" text-anchor="middle" font-size="11" fill="var(--text-primary)">hdfs-sink</text>
+
+        <rect x="490" y="124" width="150" height="30" rx="6" fill="none" stroke="var(--baseline)"/>
+        <text x="565" y="143" text-anchor="middle" font-size="11" fill="var(--text-primary)">Spark streaming</text>
+
+        <!-- batch layer -->
+        <rect x="490" y="180" width="150" height="30" rx="6" fill="none" stroke="var(--baseline)"/>
+        <text x="565" y="199" text-anchor="middle" font-size="11" fill="var(--text-primary)">HDFS &rarr; MapReduce / ALS</text>
+
+        <rect x="700" y="180" width="90" height="30" rx="6" fill="var(--series-2)" fill-opacity="0.12" stroke="var(--series-2)"/>
+        <text x="745" y="199" text-anchor="middle" font-size="11" fill="var(--text-primary)">HBase</text>
+
+        <rect x="700" y="10" width="90" height="30" rx="6" fill="var(--series-3)" fill-opacity="0.12" stroke="var(--series-3)"/>
+        <text x="745" y="29" text-anchor="middle" font-size="11" fill="var(--text-primary)">Hybrid recs</text>
+
+        <rect x="700" y="60" width="90" height="30" rx="6" fill="none" stroke="var(--baseline)"/>
+        <text x="745" y="79" text-anchor="middle" font-size="11" fill="var(--text-primary)">product-service</text>
+
+        <!-- arrows -->
+        <g stroke="var(--text-muted)" stroke-width="1.4" fill="none" marker-end="url(#arrow)">
+          <path d="M110,57 H160"/>
+          <path d="M280,57 H330"/>
+          <path d="M440,57 C465,57 465,25 490,25"/>
+          <path d="M440,57 C465,57 465,63 490,63"/>
+          <path d="M440,57 C465,57 465,101 490,101"/>
+          <path d="M440,57 C465,57 465,139 490,139"/>
+          <path d="M440,57 C465,57 465,195 490,195"/>
+          <path d="M640,195 H700"/>
+          <path d="M745,180 V60"/>
+          <path d="M790,75 C820,75 820,25 790,25"/>
+          <path d="M700,75 C680,75 660,50 640,30"/>
+        </g>
+        <defs>
+          <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+            <path d="M0,0 L6,3 L0,6 Z" fill="var(--text-muted)"/>
+          </marker>
+        </defs>
+      </svg>
+      <p class="arch-note">Speed layer (top): four independent Kafka consumers, at-least-once, no shared offsets. Batch layer (bottom): HDFS &rarr; MapReduce popularity job + Spark MLlib ALS &rarr; HBase, blended with live CF at serve time.</p>
+    </div>
+  </section>
+
+  <section id="results">
+    <h2>Results</h2>
+    <p class="section-sub">Real numbers from <code>experiments/</code>, not illustrative placeholders &mdash; every chart below is generated from the checked-in <code>results/*.jsonl</code> files.</p>
+
+    <div class="chart-card">
+      <h3>Model comparison &mdash; RQ2</h3>
+      <p class="chart-sub">Random split, k=10, 1,866 test users. Item-CF and catalog-ALS are nearly tied on quality; both comfortably beat popularity and content-based alone.</p>
+      <div class="legend">
+        <span class="key"><span class="swatch" style="background:var(--series-1)"></span>Precision@10</span>
+        <span class="key"><span class="swatch" style="background:var(--series-2)"></span>NDCG@10</span>
+      </div>
+      <div id="chart-models"></div>
+      <details class="table-toggle"><summary>View as table</summary>
+        <table class="data-table" id="table-models"></table>
+      </details>
+    </div>
+
+    <div class="chart-card">
+      <h3>Hybrid CF + ALS blend &mdash; RQ2</h3>
+      <p class="chart-sub">Score = &alpha;&middot;ALS + (1&minus;&alpha;)&middot;CF. Quality peaks at &alpha;=0.25, the value shipped as the default in <code>services/recommendation-service</code>.</p>
+      <div id="chart-hybrid"></div>
+      <details class="table-toggle"><summary>View as table</summary>
+        <table class="data-table" id="table-hybrid"></table>
+      </details>
+    </div>
+
+    <div class="chart-card">
+      <h3>Kafka ingestion throughput</h3>
+      <p class="chart-sub">Paced load against the live stack with the full consumer pipeline attached, run twice three weeks apart. Achieved throughput plateaus well below target &mdash; real saturation, reproduced independently both times.</p>
+      <div class="legend">
+        <span class="key"><span class="swatch" style="background:var(--baseline)"></span>Target rate</span>
+        <span class="key"><span class="swatch" style="background:var(--series-1)"></span>Achieved (2026-09-19)</span>
+      </div>
+      <div id="chart-throughput"></div>
+      <details class="table-toggle"><summary>View as table</summary>
+        <table class="data-table" id="table-throughput"></table>
+      </details>
+    </div>
+
+    <div class="chart-card">
+      <h3>Fault tolerance</h3>
+      <p class="chart-sub">Real <code>docker kill</code>, not a graceful stop &mdash; then measured recovery.</p>
+      <div class="stat-row">
+        <div class="stat-tile">
+          <div class="label">recommendation-service &middot; health recovery</div>
+          <div class="value">1.07<span class="unit">s</span></div>
+        </div>
+        <div class="stat-tile">
+          <div class="label">recommendation-service &middot; full replay stabilized</div>
+          <div class="value">8.13<span class="unit">s</span></div>
+        </div>
+        <div class="stat-tile">
+          <div class="label">hdfs-sink event loss after crash</div>
+          <div class="value">0<span class="unit">/40</span></div>
+        </div>
+        <div class="stat-tile">
+          <div class="label">Elasticsearch alone after container replace</div>
+          <div class="value" style="font-size:16px;"><span class="badge critical">stays broken</span></div>
+        </div>
+        <div class="stat-tile">
+          <div class="label">+ product-service restart</div>
+          <div class="value" style="font-size:16px;"><span class="badge good">recovers</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="findings">
+    <h2>Key findings</h2>
+    <ul class="findings-list">
+      <li><strong>CF and ALS are close on quality, ALS wins on latency.</strong> Item-CF (Precision@10 0.118) and catalog-ALS (0.119) are near-tied; ALS serves 18&ndash;29x faster since it's a precomputed lookup rather than live cosine recomputation.</li>
+      <li><strong>The optimizer earns its keep, at a measured cost.</strong> The Postgres auto-indexer cut p95 read latency 45% for negligible write overhead &mdash; confirmed against real controlled traffic, not just documented.</li>
+      <li><strong>Elasticsearch genuinely loses its index on container replacement</strong> &mdash; confirmed via a real container swap, not just a process kill &mdash; and only recovers once product-service, not Elasticsearch itself, restarts.</li>
+      <li><strong>The naive CF lookup doesn't scale, and now it doesn't have to.</strong> A precomputed neighbor cache turned live p95 latency from 90ms to 0.054ms at 5,000 items &mdash; a 1,600&ndash;5,100x speedup depending on catalog size.</li>
+      <li><strong>Kafka throughput saturates well below its own unpaced ceiling</strong> once a full downstream consumer pipeline is attached &mdash; reproduced across two independent runs three weeks apart.</li>
+    </ul>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <h4>Project</h4>
+        <ul>
+          <li><a href="https://github.com/Charith-Reddy-Pareddy/distributed-ecommerce-recommendation-analytics-system">Source code</a></li>
+          <li><a href="https://github.com/Charith-Reddy-Pareddy/distributed-ecommerce-recommendation-analytics-system#readme">README</a></li>
+          <li><a href="https://github.com/Charith-Reddy-Pareddy/distributed-ecommerce-recommendation-analytics-system/tree/main/experiments">Experiments &amp; raw results</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Documentation</h4>
+        <ul>
+          <li><a href="https://github.com/Charith-Reddy-Pareddy/distributed-ecommerce-recommendation-analytics-system/blob/main/docs/RESEARCH_REPORT.md">Research report</a></li>
+          <li><a href="https://github.com/Charith-Reddy-Pareddy/distributed-ecommerce-recommendation-analytics-system/blob/main/docs/ARCHITECTURE.md">Architecture</a></li>
+          <li><a href="https://github.com/Charith-Reddy-Pareddy/distributed-ecommerce-recommendation-analytics-system/blob/main/docs/RUNNING_LOCALLY.md">Running locally</a></li>
+        </ul>
+      </div>
+      <div>
+        <h4>Stack</h4>
+        <ul>
+          <li>Kafka &middot; Spark &middot; HBase</li>
+          <li>Cassandra &middot; Elasticsearch &middot; MongoDB</li>
+          <li>FastAPI &middot; PyTorch &middot; Postgres</li>
+        </ul>
+      </div>
+    </div>
+    <p class="colophon">Every number on this page comes from the repository's own <code>experiments/*/results/*.jsonl</code> files &mdash; pulling them in at build time isn't automated yet, so values are transcribed from the latest recorded runs and updated alongside the docs. See the research report for full methodology, limitations, and reproduction steps.</p>
+  </div>
+</footer>
+
+<div class="tooltip" id="tooltip" role="tooltip"></div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- theme toggle -------------------------------------------------
+  var root = document.documentElement;
+  var toggle = document.getElementById("theme-toggle");
+  var saved = null;
+  try { saved = localStorage.getItem("theme"); } catch (e) {}
+  if (saved === "light" || saved === "dark") root.setAttribute("data-theme", saved);
+  toggle.addEventListener("click", function () {
+    var current = root.getAttribute("data-theme");
+    var next = current === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    try { localStorage.setItem("theme", next); } catch (e) {}
+  });
+
+  // ---- shared tooltip -------------------------------------------------
+  var tooltip = document.getElementById("tooltip");
+  function showTooltip(evt, html) {
+    tooltip.innerHTML = html;
+    tooltip.style.left = evt.pageX + "px";
+    tooltip.style.top = (evt.pageY - 12) + "px";
+    tooltip.classList.add("show");
+  }
+  function hideTooltip() { tooltip.classList.remove("show"); }
+
+  function css(name) {
+    return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  }
+
+  function svgEl(tag, attrs) {
+    var el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    for (var k in attrs) el.setAttribute(k, attrs[k]);
+    return el;
+  }
+
+  // ---- data (from experiments/recommendation/results/*.jsonl and
+  //      experiments/throughput/results/throughput_sweep.jsonl) --------
+  var MODELS = [
+    { name: "Popularity", precision: 0.0869, ndcg: 0.1899 },
+    { name: "Content-based", precision: 0.0144, ndcg: 0.0277 },
+    { name: "NeuMF", precision: 0.1089, ndcg: 0.2920 },
+    { name: "Item-CF", precision: 0.1175, ndcg: 0.3266 },
+    { name: "Catalog-ALS", precision: 0.1191, ndcg: 0.3148 }
+  ];
+
+  var HYBRID = [
+    { alpha: 0.0, precision: 0.1266 },
+    { alpha: 0.25, precision: 0.1271 },
+    { alpha: 0.5, precision: 0.1258 },
+    { alpha: 0.75, precision: 0.1230 },
+    { alpha: 1.0, precision: 0.1191 }
+  ];
+
+  var THROUGHPUT = [
+    { target: 100, achieved: 70.8 },
+    { target: 250, achieved: 162.4 },
+    { target: 500, achieved: 253.9 },
+    { target: 750, achieved: 273.6 },
+    { target: 1000, achieved: 340.0 },
+    { target: 1500, achieved: 368.5 }
+  ];
+
+  // ---- grouped bar chart: model comparison ---------------------------
+  function renderModelChart() {
+    var W = 860, H = 300, padL = 40, padR = 10, padT = 10, padB = 34;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    var groupW = plotW / MODELS.length;
+    var barW = 22, gap = 4;
+    var maxVal = 0.35;
+
+    var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, width: "100%", role: "img", "aria-label": "Bar chart comparing Precision at 10 and NDCG at 10 across five recommendation models" });
+
+    // gridlines
+    [0, 0.1, 0.2, 0.3].forEach(function (v) {
+      var y = padT + plotH - (v / maxVal) * plotH;
+      svg.appendChild(svgEl("line", { x1: padL, x2: W - padR, y1: y, y2: y, class: "gridline" }));
+      var t = svgEl("text", { x: padL - 8, y: y + 3, class: "axis-label", "text-anchor": "end" });
+      t.textContent = v.toFixed(1);
+      svg.appendChild(t);
+    });
+    svg.appendChild(svgEl("line", { x1: padL, x2: W - padR, y1: padT + plotH, y2: padT + plotH, class: "baseline" }));
+
+    MODELS.forEach(function (m, i) {
+      var gx = padL + i * groupW + groupW / 2;
+      [["precision", "var(--series-1)"], ["ndcg", "var(--series-2)"]].forEach(function (pair, j) {
+        var key = pair[0], color = pair[1];
+        var val = m[key];
+        var h = (val / maxVal) * plotH;
+        var x = gx - barW - gap / 2 + j * (barW + gap);
+        var y = padT + plotH - h;
+        var rect = svgEl("rect", {
+          class: "bar-rect", x: x, y: y, width: barW, height: Math.max(h, 1),
+          rx: 4, ry: 4, fill: color
+        });
+        rect.addEventListener("mousemove", function (evt) {
+          showTooltip(evt, "<strong>" + m.name + "</strong><br>" + (key === "precision" ? "Precision@10" : "NDCG@10") + ": " + val.toFixed(4));
+        });
+        rect.addEventListener("mouseleave", hideTooltip);
+        svg.appendChild(rect);
+      });
+      var label = svgEl("text", { x: gx, y: padT + plotH + 18, class: "axis-label", "text-anchor": "middle" });
+      label.textContent = m.name;
+      svg.appendChild(label);
+    });
+
+    document.getElementById("chart-models").appendChild(svg);
+
+    var table = document.getElementById("table-models");
+    var html = "<tr><th>Model</th><th class='num'>Precision@10</th><th class='num'>NDCG@10</th></tr>";
+    MODELS.forEach(function (m) {
+      html += "<tr><td>" + m.name + "</td><td class='num'>" + m.precision.toFixed(4) + "</td><td class='num'>" + m.ndcg.toFixed(4) + "</td></tr>";
+    });
+    table.innerHTML = html;
+  }
+
+  // ---- line chart: hybrid alpha sweep --------------------------------
+  function renderHybridChart() {
+    var W = 860, H = 260, padL = 44, padR = 20, padT = 16, padB = 34;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    var minV = 0.115, maxV = 0.130;
+
+    function xAt(a) { return padL + (a / 1.0) * plotW; }
+    function yAt(v) { return padT + plotH - ((v - minV) / (maxV - minV)) * plotH; }
+
+    var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, width: "100%", role: "img", "aria-label": "Line chart of Precision at 10 across hybrid blend alpha from 0 to 1, peaking near alpha 0.25" });
+
+    [0.115, 0.12, 0.125, 0.13].forEach(function (v) {
+      var y = yAt(v);
+      svg.appendChild(svgEl("line", { x1: padL, x2: W - padR, y1: y, y2: y, class: "gridline" }));
+      var t = svgEl("text", { x: padL - 8, y: y + 3, class: "axis-label", "text-anchor": "end" });
+      t.textContent = v.toFixed(3);
+      svg.appendChild(t);
+    });
+
+    HYBRID.forEach(function (p) {
+      var t = svgEl("text", { x: xAt(p.alpha), y: padT + plotH + 18, class: "axis-label", "text-anchor": "middle" });
+      t.textContent = "α=" + p.alpha;
+      svg.appendChild(t);
+    });
+
+    var pts = HYBRID.map(function (p) { return xAt(p.alpha) + "," + yAt(p.precision); }).join(" ");
+    svg.appendChild(svgEl("polyline", { points: pts, fill: "none", stroke: "var(--series-1)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+
+    var best = HYBRID.reduce(function (a, b) { return b.precision > a.precision ? b : a; });
+
+    HYBRID.forEach(function (p) {
+      var isBest = p.alpha === best.alpha;
+      var dot = svgEl("circle", {
+        cx: xAt(p.alpha), cy: yAt(p.precision), r: isBest ? 6 : 5,
+        fill: "var(--series-1)", stroke: "var(--surface)", "stroke-width": 2
+      });
+      dot.addEventListener("mousemove", function (evt) {
+        showTooltip(evt, "&alpha;=" + p.alpha + "<br>Precision@10: " + p.precision.toFixed(4) + (isBest ? " (best)" : ""));
+      });
+      dot.addEventListener("mouseleave", hideTooltip);
+      svg.appendChild(dot);
+    });
+
+    var label = svgEl("text", { x: xAt(best.alpha), y: yAt(best.precision) - 14, class: "axis-label", "text-anchor": "middle", fill: "var(--series-1)", "font-weight": "600" });
+    label.textContent = "peak: α=" + best.alpha;
+    label.setAttribute("fill", "var(--series-1)");
+    svg.appendChild(label);
+
+    document.getElementById("chart-hybrid").appendChild(svg);
+
+    var table = document.getElementById("table-hybrid");
+    var html = "<tr><th>Alpha</th><th class='num'>Precision@10</th></tr>";
+    HYBRID.forEach(function (p) {
+      html += "<tr><td>" + p.alpha + "</td><td class='num'>" + p.precision.toFixed(4) + "</td></tr>";
+    });
+    table.innerHTML = html;
+  }
+
+  // ---- line chart: throughput target vs achieved ---------------------
+  function renderThroughputChart() {
+    var W = 860, H = 300, padL = 50, padR = 20, padT = 16, padB = 34;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    var maxV = 1600;
+
+    function xAt(t) { return padL + (t / maxV) * plotW; }
+    function yAt(v) { return padT + plotH - (v / maxV) * plotH; }
+
+    var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, width: "100%", role: "img", "aria-label": "Line chart comparing target Kafka ingestion rate to achieved throughput, showing achieved throughput plateauing well below target as target rate increases" });
+
+    [0, 400, 800, 1200, 1600].forEach(function (v) {
+      var y = yAt(v);
+      svg.appendChild(svgEl("line", { x1: padL, x2: W - padR, y1: y, y2: y, class: "gridline" }));
+      var t = svgEl("text", { x: padL - 8, y: y + 3, class: "axis-label", "text-anchor": "end" });
+      t.textContent = v;
+      svg.appendChild(t);
+    });
+    THROUGHPUT.forEach(function (p) {
+      var t = svgEl("text", { x: xAt(p.target), y: padT + plotH + 18, class: "axis-label", "text-anchor": "middle" });
+      t.textContent = p.target;
+      svg.appendChild(t);
+    });
+
+    // y = x reference (target line)
+    var refPts = [[0, 0], [maxV, maxV]].map(function (p) { return xAt(p[0]) + "," + yAt(p[1]); }).join(" ");
+    svg.appendChild(svgEl("polyline", { points: refPts, fill: "none", stroke: "var(--baseline)", "stroke-width": 2, "stroke-dasharray": "1,5", "stroke-linecap": "round" }));
+
+    var achievedPts = THROUGHPUT.map(function (p) { return xAt(p.target) + "," + yAt(p.achieved); }).join(" ");
+    svg.appendChild(svgEl("polyline", { points: achievedPts, fill: "none", stroke: "var(--series-1)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+
+    THROUGHPUT.forEach(function (p) {
+      var dot = svgEl("circle", { cx: xAt(p.target), cy: yAt(p.achieved), r: 5, fill: "var(--series-1)", stroke: "var(--surface)", "stroke-width": 2 });
+      dot.addEventListener("mousemove", function (evt) {
+        showTooltip(evt, "target " + p.target + "/s<br>achieved " + p.achieved + "/s");
+      });
+      dot.addEventListener("mouseleave", hideTooltip);
+      svg.appendChild(dot);
+    });
+
+    document.getElementById("chart-throughput").appendChild(svg);
+
+    var table = document.getElementById("table-throughput");
+    var html = "<tr><th>Target (events/sec)</th><th class='num'>Achieved (events/sec)</th></tr>";
+    THROUGHPUT.forEach(function (p) {
+      html += "<tr><td>" + p.target + "</td><td class='num'>" + p.achieved + "</td></tr>";
+    });
+    table.innerHTML = html;
+  }
+
+  renderModelChart();
+  renderHybridChart();
+  renderThroughputChart();
+})();
+</script>
+</body>
+</html>
