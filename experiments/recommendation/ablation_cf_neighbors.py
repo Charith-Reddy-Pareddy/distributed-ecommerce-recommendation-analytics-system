@@ -1,10 +1,12 @@
 """Point 5: does the number of similar-item neighbors item-CF blends over
 per seed item affect quality? RecommendationEngine.recommend_for_user
-hardcodes this at top_n=20 (services/recommendation-service/app/model.py)
-and doesn't expose it as a parameter, so recommend_with_neighbor_count()
-below mirrors its exact scoring logic with that made explicit -- at
-neighbor_count=20 it should reproduce production's own numbers exactly
-(a built-in sanity check against offline_models.py's item_cf result).
+hardcodes this at top_n=NEIGHBOR_CACHE_SIZE (currently 50, set in
+services/recommendation-service/app/model.py after this ablation showed
+NDCG@10 still climbing at 50 with no plateau) and doesn't expose it as a
+parameter, so recommend_with_neighbor_count() below mirrors its exact
+scoring logic with that made explicit -- at neighbor_count=50 it should
+reproduce production's own numbers exactly (a built-in sanity check
+against offline_models.py's item_cf result).
 """
 import sys
 from pathlib import Path

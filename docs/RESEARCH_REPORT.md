@@ -608,21 +608,23 @@ dataset does.
 
 ### CF neighbor count
 
-`recommend_for_user` hardcodes 20 similar items considered per seed
-item. Sweeping that:
+`recommend_for_user` considers a fixed number of similar items per
+seed item. Sweeping that:
 
 | Neighbor count | Precision@10 | NDCG@10 |
 |---|---|---|
 | 5 | 0.1033 | 0.2889 |
 | 10 | 0.1088 | 0.3013 |
-| 20 (production) | 0.1175 | 0.3266 |
-| 50 | **0.1260** | **0.3426** |
+| 20 (former production default) | 0.1175 | 0.3266 |
+| 50 (production) | **0.1260** | **0.3426** |
 
-Quality improves **monotonically** through 50 with no plateau --
-production's hardcoded 20 is conservative. This ablation predates the
-neighbor cache below: the compute cost of considering more neighbors
-now falls on the periodic background refresh, not the request path,
-so there's less reason left not to raise it toward 50.
+Quality improved **monotonically** through 50 with no plateau, so
+production was raised from 20 to 50 on the strength of this result --
+the compute cost of considering more neighbors falls on the periodic
+background refresh, not the request path, so there was little reason
+left to stay conservative. 50 was also already `NEIGHBOR_CACHE_SIZE`,
+so the change needed no cache resizing. Whether quality keeps
+improving past 50 is untested and would need a wider sweep.
 
 ## Limitations
 

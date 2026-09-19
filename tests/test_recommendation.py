@@ -150,6 +150,26 @@ def test_neighbor_cache_respects_requested_top_n():
     assert len(engine.similar_items(100, top_n=10)) == 3  # only 3 other items exist
 
 
+def test_recommend_for_user_considers_more_than_twenty_neighbors():
+    # Regression test for the neighbor-count ablation
+    # (experiments/recommendation/ablation_cf_neighbors.py): quality kept
+    # improving monotonically through 50 candidates, so recommend_for_user
+    # was raised from a hardcoded top_n=20 to NEIGHBOR_CACHE_SIZE (50).
+    # Build 25 items that all share equal, positive similarity to the
+    # user's one seed item via a common second user -- with the old
+    # top_n=20 only 20 of them could ever become candidates, capping the
+    # output length at 20 even when a larger top_n is requested.
+    events = [(1, 0, "purchase"), (2, 0, "purchase")]
+    for item_id in range(1, 26):
+        events.append((2, item_id, "purchase"))
+    engine = engine_with_events(events)
+
+    recs = engine.recommend_for_user(1, top_n=30)
+
+    assert len(recs) == 25
+    assert 20 < model.NEIGHBOR_CACHE_SIZE
+
+
 def test_refresh_neighbor_cache_excludes_zero_scores_and_self():
     engine = engine_with_events([(1, 100, "view"), (2, 200, "view")])
     engine.refresh_neighbor_cache()

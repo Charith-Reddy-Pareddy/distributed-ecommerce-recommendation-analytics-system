@@ -165,7 +165,12 @@ class RecommendationEngine:
 
         candidate_scores: dict[int, float] = defaultdict(float)
         for product_id, weight in interacted.items():
-            for similar_id, sim_score in self.similar_items(product_id, top_n=20):
+            # 50, not some smaller round number: the neighbor-count ablation
+            # (experiments/recommendation/ablation_cf_neighbors.py) tested
+            # 5/10/20/50 and found NDCG@10 still climbing at 50 with no
+            # plateau yet, so this rides NEIGHBOR_CACHE_SIZE rather than
+            # under-cutting it.
+            for similar_id, sim_score in self.similar_items(product_id, top_n=NEIGHBOR_CACHE_SIZE):
                 if similar_id in interacted:
                     continue
                 candidate_scores[similar_id] += sim_score * weight
