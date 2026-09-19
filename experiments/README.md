@@ -19,4 +19,7 @@ Every run appends one JSON record per result via `common.record_result()`
 experiment's `results/*.jsonl`. Nothing in this directory is reported in
 the README or research report until it's actually been run.
 
-Status: scaffolding only. Results land as each experiment is run.
+Status: all four experiments have been run at least once; each
+subfolder's `results/*.jsonl` holds real recorded data cited in the
+main README and research report. Re-run any of them at any time --
+each run just appends fresh records.
