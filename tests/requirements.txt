@@ -4,6 +4,7 @@ pytest==8.3.3
 pydantic==2.9.2
 fastapi==0.115.0
 prometheus-client==0.21.0
+hdfs==2.7.3
 sqlparse==0.5.1
 psycopg2-binary==2.9.9
 numpy==1.26.4
