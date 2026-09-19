@@ -5,6 +5,14 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Distributed E-Commerce Recommendation Analytics System</title>
 <meta name="description" content="A distributed recommendation and analytics platform (Kafka, Spark, HBase, Cassandra, Elasticsearch) with a real experimental evaluation of recommendation quality, streaming/batch serving latency, and fault tolerance.">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<meta property="og:title" content="Distributed E-Commerce Recommendation Analytics System">
+<meta property="og:description" content="Four research questions, five recommendation models compared head-to-head, and fault-tolerance and throughput experiments run against the live system, not simulated.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://charith-reddy-pareddy.github.io/distributed-ecommerce-recommendation-analytics-system/">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Distributed E-Commerce Recommendation Analytics System">
+<meta name="twitter:description" content="Four research questions, five recommendation models compared head-to-head, and fault-tolerance and throughput experiments run against the live system, not simulated.">
 <style>
   :root {
     color-scheme: light;
@@ -87,16 +95,29 @@
   header.site .brand { font-weight: 600; font-size: 15px; letter-spacing: 0.01em; }
   header.site nav a {
     color: var(--text-secondary); text-decoration: none; font-size: 14px;
-    margin-left: 20px;
+    margin-left: 20px; transition: color 0.15s ease;
   }
   header.site nav a:hover { color: var(--text-primary); }
+  header.site nav a.active { color: var(--series-1); }
   #theme-toggle {
     margin-left: 20px; font-size: 13px; color: var(--text-secondary);
     background: var(--surface); border: 1px solid var(--border);
     border-radius: 6px; padding: 5px 10px; cursor: pointer;
   }
+  .nav-toggle {
+    display: none; background: none; border: 1px solid var(--border);
+    border-radius: 6px; padding: 6px 10px; cursor: pointer;
+    color: var(--text-primary); font-size: 16px; line-height: 1;
+  }
 
-  .hero { padding: 56px 0 40px; }
+  .hero { padding: 56px 0 40px; position: relative; overflow: hidden; }
+  .hero::before {
+    content: ""; position: absolute; top: -140px; right: -140px;
+    width: 440px; height: 440px; border-radius: 50%;
+    background: radial-gradient(circle, var(--series-1) 0%, transparent 70%);
+    opacity: 0.08; pointer-events: none; z-index: 0;
+  }
+  .hero > * { position: relative; z-index: 1; }
   .hero .kicker {
     color: var(--text-muted); font-size: 13px; text-transform: uppercase;
     letter-spacing: 0.08em; margin: 0 0 12px;
@@ -196,9 +217,38 @@
   footer a:hover { color: var(--text-primary); }
   footer .colophon { margin-top: 32px; font-size: 12px; color: var(--text-muted); }
 
+  .reveal {
+    opacity: 0; transform: translateY(14px);
+    transition: opacity 0.5s ease, transform 0.5s ease;
+  }
+  .reveal.reveal-visible { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .reveal { opacity: 1; transform: none; transition: none; }
+  }
+
+  #back-to-top {
+    position: fixed; bottom: 24px; right: 24px; z-index: 15;
+    width: 42px; height: 42px; border-radius: 50%;
+    background: var(--text-primary); color: var(--page); border: none;
+    cursor: pointer; font-size: 18px; line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none; transform: translateY(8px);
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    box-shadow: 0 4px 14px rgba(11,11,11,0.18);
+  }
+  #back-to-top.visible { opacity: 1; pointer-events: auto; transform: none; }
+
   @media (max-width: 640px) {
     .hero h1 { font-size: 27px; }
-    header.site nav { display: none; }
+    .nav-toggle { display: inline-flex; align-items: center; justify-content: center; }
+    header.site .bar { position: relative; flex-wrap: wrap; }
+    header.site nav {
+      display: none; width: 100%; flex-direction: column; align-items: flex-start;
+      gap: 2px; padding: 12px 0 4px; border-top: 1px solid var(--border); margin-top: 12px;
+    }
+    header.site nav.open { display: flex; }
+    header.site nav a { margin-left: 0; padding: 8px 0; width: 100%; }
+    #theme-toggle { margin-left: 0; margin-top: 6px; }
   }
 </style>
 </head>
@@ -207,7 +257,8 @@
 <header class="site">
   <div class="wrap bar">
     <div class="brand">E-Commerce Recommendation Analytics</div>
-    <nav>
+    <button class="nav-toggle" id="nav-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false" aria-controls="site-nav">&#9776;&#xFE0E;</button>
+    <nav id="site-nav">
       <a href="#research">Research</a>
       <a href="#results">Results</a>
       <a href="#architecture">Architecture</a>
@@ -216,6 +267,8 @@
     </nav>
   </div>
 </header>
+
+<button id="back-to-top" type="button" aria-label="Back to top">&#8593;&#xFE0E;</button>
 
 <main class="wrap">
 
@@ -243,7 +296,7 @@
     </div>
   </section>
 
-  <section id="research">
+  <section id="research" class="reveal">
     <h2>Research questions</h2>
     <p class="section-sub">The project's architecture exists to answer these &mdash; each one backed by a reproducible experiment under <code>experiments/</code>, not just a design decision.</p>
     <div class="rq-grid">
@@ -270,7 +323,7 @@
     </div>
   </section>
 
-  <section id="architecture">
+  <section id="architecture" class="reveal">
     <h2>Architecture</h2>
     <p class="section-sub">Lambda-style: every event flows through one Kafka topic, consumed independently by a real-time (speed) path and a batch (Spark/HBase) path, with no shared database between services.</p>
     <div class="arch-diagram">
@@ -335,7 +388,7 @@
     </div>
   </section>
 
-  <section id="results">
+  <section id="results" class="reveal">
     <h2>Results</h2>
     <p class="section-sub">Real numbers from <code>experiments/</code>, not illustrative placeholders &mdash; every chart below is generated from the checked-in <code>results/*.jsonl</code> files.</p>
 
@@ -402,7 +455,7 @@
     </div>
   </section>
 
-  <section id="findings">
+  <section id="findings" class="reveal">
     <h2>Key findings</h2>
     <ul class="findings-list">
       <li><strong>CF and ALS are close on quality, ALS wins on latency.</strong> Item-CF (Precision@10 0.118) and catalog-ALS (0.119) are near-tied; ALS serves 18&ndash;29x faster since it's a precomputed lookup rather than live cosine recomputation.</li>
@@ -465,6 +518,64 @@
     var next = current === "dark" ? "light" : "dark";
     root.setAttribute("data-theme", next);
     try { localStorage.setItem("theme", next); } catch (e) {}
+  });
+
+  // ---- mobile nav toggle -----------------------------------------------
+  var navToggle = document.getElementById("nav-toggle");
+  var siteNav = document.getElementById("site-nav");
+  navToggle.addEventListener("click", function () {
+    var isOpen = siteNav.classList.toggle("open");
+    navToggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+  });
+  siteNav.querySelectorAll("a").forEach(function (a) {
+    a.addEventListener("click", function () {
+      siteNav.classList.remove("open");
+      navToggle.setAttribute("aria-expanded", "false");
+    });
+  });
+
+  // ---- scroll-reveal + active nav link ----------------------------------
+  var navLinks = Array.prototype.slice.call(siteNav.querySelectorAll("a[href^='#']"));
+  var revealSections = document.querySelectorAll("section.reveal");
+  if ("IntersectionObserver" in window) {
+    var revealObserver = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("reveal-visible");
+            revealObserver.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.1, rootMargin: "0px 0px -60px 0px" }
+    );
+    revealSections.forEach(function (s) { revealObserver.observe(s); });
+
+    var activeObserver = new IntersectionObserver(
+      function (entries) {
+        entries.forEach(function (entry) {
+          var link = navLinks.filter(function (a) { return a.getAttribute("href") === "#" + entry.target.id; })[0];
+          if (!link) return;
+          if (entry.isIntersecting) {
+            navLinks.forEach(function (a) { a.classList.remove("active"); });
+            link.classList.add("active");
+          }
+        });
+      },
+      { rootMargin: "-40% 0px -50% 0px" }
+    );
+    revealSections.forEach(function (s) { activeObserver.observe(s); });
+  } else {
+    revealSections.forEach(function (s) { s.classList.add("reveal-visible"); });
+  }
+
+  // ---- back to top -------------------------------------------------
+  var backToTop = document.getElementById("back-to-top");
+  window.addEventListener("scroll", function () {
+    backToTop.classList.toggle("visible", window.scrollY > 700);
+  });
+  backToTop.addEventListener("click", function () {
+    window.scrollTo({ top: 0, behavior: "smooth" });
   });
 
   // ---- shared tooltip -------------------------------------------------
