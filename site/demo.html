@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard demo (static) &middot; Distributed E-Commerce Recommendation Analytics System</title>
+<meta name="description" content="A static, frozen-data replica of the project's real operational dashboard -- product search, analytics, autonomous tuning decisions, and ALS recommendations, all from a real captured snapshot.">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0f1420;
+    --card-bg: #1a2233;
+    --border: #2c3548;
+    --text: #e6e9ef;
+    --muted: #9aa4b8;
+    --accent: #5b8cff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  a { color: var(--accent); }
+
+  .banner {
+    background: #2a2410; border-bottom: 1px solid #4a3f14; color: #f0c862;
+    font-size: 13px; padding: 10px 20px; text-align: center;
+  }
+  .banner a { color: #ffe08a; }
+  .banner strong { color: #ffe9ad; }
+
+  header { padding: 1.5rem 2rem; border-bottom: 1px solid var(--border); }
+  header h1 { margin: 0 0 0.25rem; font-size: 1.4rem; }
+  header .backlink { font-size: 0.8rem; margin-bottom: 0.6rem; display: inline-block; }
+  .subtitle { margin: 0; color: var(--muted); font-size: 0.9rem; }
+
+  main { padding: 1.5rem 2rem; display: grid; gap: 1.5rem; max-width: 1000px; margin: 0 auto; }
+  .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem 1.5rem; }
+  .card h2 { margin-top: 0; font-size: 1.1rem; display: flex; align-items: center; gap: 0.5rem; }
+  .badge { font-size: 0.65rem; font-weight: 600; color: var(--accent); border: 1px solid var(--accent); border-radius: 999px; padding: 0.15rem 0.6rem; text-transform: uppercase; letter-spacing: 0.03em; }
+  .badge.frozen { color: #f0c862; border-color: #f0c862; }
+
+  form, .controls, .geo-row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 0.75rem; align-items: center; }
+  input, select { background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 0.5rem 0.7rem; font-size: 0.9rem; }
+  input[type="text"] { flex: 1; min-width: 140px; }
+  input[type="number"] { width: 110px; }
+  input:disabled, select:disabled { opacity: 0.5; cursor: not-allowed; }
+  button { background: var(--accent); color: white; border: none; border-radius: 6px; padding: 0.5rem 1rem; font-size: 0.9rem; cursor: pointer; }
+  button:hover { opacity: 0.9; }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  .status { color: var(--muted); font-size: 0.85rem; align-self: center; }
+  .disabled-note { color: var(--muted); font-size: 0.8rem; font-style: italic; }
+
+  .results { display: grid; gap: 0.6rem; }
+  .result-item { border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.8rem; display: flex; justify-content: space-between; gap: 1rem; font-size: 0.9rem; }
+  .result-item .meta { color: var(--muted); font-size: 0.8rem; }
+  .product-item { align-items: center; }
+  .product-thumb { width: 48px; height: 48px; object-fit: contain; background: white; border-radius: 6px; flex-shrink: 0; }
+  .product-body { flex: 1; min-width: 0; }
+  .product-side { text-align: right; flex-shrink: 0; }
+  .product-side a { color: var(--accent); text-decoration: none; }
+  .product-side a:hover { text-decoration: underline; }
+  .empty { color: var(--muted); font-size: 0.85rem; font-style: italic; }
+  canvas { width: 100% !important; }
+
+  footer { padding: 1.5rem 2rem 3rem; max-width: 1000px; margin: 0 auto; color: var(--muted); font-size: 0.8rem; }
+</style>
+</head>
+<body>
+
+<div class="banner">
+  &#128248;&#xFE0E; <strong>Static demo.</strong> This is a frozen snapshot of real project data, not a live connection &mdash; GitHub Pages can't run the Kafka/Spark/HBase/Postgres/Cassandra/Elasticsearch stack behind it.
+  <a href="index.html#architecture">See why, and the real architecture</a>.
+</div>
+
+<header>
+  <a class="backlink" href="index.html">&larr; Back to project overview</a>
+  <h1>Distributed E-Commerce Recommendation Analytics System</h1>
+  <p class="subtitle">
+    A replica of the project's real operational dashboard, wired to a frozen
+    snapshot instead of live services. Every number here was really produced
+    by the system &mdash; captured 2026-09-19 &mdash; just not fetched live for this page.
+  </p>
+</header>
+
+<main>
+  <section class="card">
+    <h2>Product Search <span class="badge">Elasticsearch</span> <span class="badge frozen">Frozen data</span></h2>
+    <p class="subtitle">160 real Amazon products (of 600+ in the live catalog), sourced from the public McAuley-Lab/Amazon-Reviews-2023 dataset -- filtered client-side here instead of queried from Elasticsearch.</p>
+    <form id="search-form">
+      <input type="text" id="search-q" placeholder="Search name / description / tags...">
+      <input type="text" id="search-category" placeholder="Category (optional)">
+      <input type="text" id="search-brand" placeholder="Brand (optional)">
+      <input type="number" id="search-price-min" placeholder="Min price" step="any">
+      <input type="number" id="search-price-max" placeholder="Max price" step="any">
+      <input type="number" id="search-rating-min" placeholder="Min rating" step="any" min="0" max="5">
+      <select id="search-sort">
+        <option value="">Sort: relevance</option>
+        <option value="price_asc">Price: low to high</option>
+        <option value="price_desc">Price: high to low</option>
+        <option value="rating_desc">Rating: high to low</option>
+      </select>
+      <button type="submit">Search</button>
+    </form>
+    <div class="geo-row">
+      <input type="number" placeholder="Latitude" disabled>
+      <input type="number" placeholder="Longitude" disabled>
+      <input type="number" placeholder="Radius (km)" disabled>
+      <button type="button" disabled>Geo search</button>
+      <span class="disabled-note">Geo search needs a live Elasticsearch geo query &mdash; not available in this static demo.</span>
+    </div>
+    <div id="search-results" class="results"></div>
+    <div class="controls">
+      <button type="button" id="load-more-btn" style="display: none;">Load more</button>
+      <span id="search-status" class="status"></span>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>Top Products <span class="badge">Postgres / SQL</span> <span class="badge frozen">Frozen data</span></h2>
+    <p class="subtitle">Views, cart-adds, and purchases for real catalog products, from a real analytics-service snapshot.</p>
+    <canvas id="top-products-chart" height="140"></canvas>
+  </section>
+
+  <section class="card">
+    <h2>Event Volume by Day <span class="badge">Postgres / SQL</span> <span class="badge frozen">Frozen data</span></h2>
+    <p class="subtitle">Real daily event counts by type, spanning this project's actual development and testing history (Aug&ndash;Sep 2026) -- not synthetic example data.</p>
+    <canvas id="event-summary-chart" height="140"></canvas>
+  </section>
+
+  <section class="card">
+    <h2>Autonomous Tuning <span class="badge">Serving-Layer Optimizer</span> <span class="badge frozen">Frozen data</span></h2>
+    <p class="subtitle">
+      A real, independent service that watches Postgres query patterns, Cassandra
+      demand volume, and Elasticsearch indexing load, and acts on what it
+      observes -- creating/dropping Postgres indexes, classifying products
+      hot/cold for Cassandra, and adjusting Elasticsearch's refresh_interval.
+      The decisions below actually happened.
+    </p>
+    <div class="controls">
+      <span id="tuning-status" class="status"></span>
+    </div>
+    <div id="tuning-decisions" class="results"></div>
+  </section>
+
+  <section class="card">
+    <h2>Personalized Recommendations <span class="badge">ALS / HBase</span> <span class="badge frozen">Frozen data</span></h2>
+    <p class="subtitle">Real catalog-native ALS output, captured for a handful of visitor ids -- pick one below (only these have a captured snapshot; a live lookup accepts any id).</p>
+    <div class="controls">
+      <label>Visitor ID:
+        <select id="rec-visitor-id">
+          <option value="54">54</option>
+          <option value="1">1</option>
+          <option value="100">100</option>
+          <option value="500">500</option>
+          <option value="1500">1500</option>
+          <option value="1866">1866</option>
+          <option value="42">42 (no recommendations -- shows the empty state)</option>
+        </select>
+      </label>
+      <button type="button" id="rec-lookup-btn">Look up</button>
+    </div>
+    <div id="rec-results" class="results"></div>
+  </section>
+</main>
+
+<footer>
+  Snapshot captured 2026-09-19 from the real, running local stack (see
+  <a href="https://github.com/Charith-Reddy-Pareddy/distributed-ecommerce-recommendation-analytics-system">the source</a>
+  for how). Values are not fabricated or illustrative -- they're a point-in-time
+  copy of real service responses, frozen because GitHub Pages can't host the
+  backend that produced them. Run <code>docker compose up</code> locally for the live version.
+</footer>
+
+<script src="demo-data.js"></script>
+<script>
+(function () {
+  "use strict";
+  var DATA = window.DEMO_DATA;
+
+  function escapeHtml(str) {
+    if (str == null) return "";
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function renderProducts(container, products) {
+    container.innerHTML = "";
+    if (!products || products.length === 0) {
+      container.innerHTML = '<div class="empty">No results.</div>';
+      return;
+    }
+    for (var i = 0; i < products.length; i++) {
+      var p = products[i];
+      var div = document.createElement("div");
+      div.className = "result-item product-item";
+      var amazonUrl = p.asin ? "https://www.amazon.com/dp/" + p.asin : null;
+      div.innerHTML =
+        (p.image ? '<img class="product-thumb" src="' + escapeHtml(p.image) + '" alt="" loading="lazy">' : "") +
+        '<div class="product-body">' +
+        "<strong>" + escapeHtml(p.name) + "</strong><br>" +
+        '<span class="meta">' +
+        escapeHtml(p.brand || "") + (p.brand ? " &middot; " : "") + escapeHtml(p.category) + " &middot; $" + p.price +
+        (p.rating_average ? " &middot; ★ " + p.rating_average + " (" + (p.rating_count || 0) + ")" : "") +
+        "</span></div>" +
+        '<div class="product-side meta">id ' + p.id + "<br>" +
+        (amazonUrl ? '<a href="' + escapeHtml(amazonUrl) + '" target="_blank" rel="noopener noreferrer">View on Amazon &rarr;</a>' : "") +
+        "</div>";
+      container.appendChild(div);
+    }
+  }
+
+  var SEARCH_PAGE_SIZE = 20;
+  var searchOffset = 0;
+  var searchMatches = [];
+
+  function currentSearchParams() {
+    return {
+      q: document.getElementById("search-q").value.trim().toLowerCase(),
+      category: document.getElementById("search-category").value.trim().toLowerCase(),
+      brand: document.getElementById("search-brand").value.trim().toLowerCase(),
+      price_min: parseFloat(document.getElementById("search-price-min").value) || null,
+      price_max: parseFloat(document.getElementById("search-price-max").value) || null,
+      rating_min: parseFloat(document.getElementById("search-rating-min").value) || null,
+      sort: document.getElementById("search-sort").value,
+    };
+  }
+
+  function doSearch(append) {
+    var container = document.getElementById("search-results");
+    if (!append) {
+      var params = currentSearchParams();
+      searchMatches = DATA.products.filter(function (p) {
+        if (params.q) {
+          var hay = (p.name + " " + p.category + " " + (p.brand || "")).toLowerCase();
+          if (hay.indexOf(params.q) === -1) return false;
+        }
+        if (params.category && p.category.toLowerCase().indexOf(params.category) === -1) return false;
+        if (params.brand && (p.brand || "").toLowerCase().indexOf(params.brand) === -1) return false;
+        if (params.price_min != null && p.price < params.price_min) return false;
+        if (params.price_max != null && p.price > params.price_max) return false;
+        if (params.rating_min != null && (p.rating_average || 0) < params.rating_min) return false;
+        return true;
+      });
+      if (params.sort === "price_asc") searchMatches.sort(function (a, b) { return a.price - b.price; });
+      else if (params.sort === "price_desc") searchMatches.sort(function (a, b) { return b.price - a.price; });
+      else if (params.sort === "rating_desc") searchMatches.sort(function (a, b) { return (b.rating_average || 0) - (a.rating_average || 0); });
+      searchOffset = 0;
+      container.innerHTML = "";
+    } else {
+      searchOffset += SEARCH_PAGE_SIZE;
+    }
+    var page = searchMatches.slice(searchOffset, searchOffset + SEARCH_PAGE_SIZE);
+    if (searchMatches.length === 0) {
+      container.innerHTML = '<div class="empty">No results.</div>';
+    } else {
+      var tmp = document.createElement("div");
+      renderProducts(tmp, page);
+      while (tmp.firstChild) container.appendChild(tmp.firstChild);
+    }
+    var shown = Math.min(searchOffset + SEARCH_PAGE_SIZE, searchMatches.length);
+    var statusEl = document.getElementById("search-status");
+    var moreBtn = document.getElementById("load-more-btn");
+    statusEl.textContent = searchMatches.length ? "Showing " + shown + " of " + searchMatches.length + " products" : "";
+    moreBtn.style.display = shown < searchMatches.length ? "inline-block" : "none";
+  }
+
+  document.getElementById("search-form").addEventListener("submit", function (e) {
+    e.preventDefault();
+    doSearch(false);
+  });
+  document.getElementById("load-more-btn").addEventListener("click", function () {
+    doSearch(true);
+  });
+
+  // ---- recommendations ----
+  function lookupRecommendations(visitorId) {
+    var container = document.getElementById("rec-results");
+    var items = DATA.recommendations[String(visitorId)];
+    if (!items) {
+      container.innerHTML = '<div class="empty">No precomputed recommendations for this visitor id (try one with enough history, e.g. 54).</div>';
+      return;
+    }
+    container.innerHTML = "";
+    items.forEach(function (r) {
+      var div = document.createElement("div");
+      div.className = "result-item";
+      div.innerHTML = "<div>" + escapeHtml(r.name) + "</div><div class=\"meta\">score " + r.score.toFixed(4) + "</div>";
+      container.appendChild(div);
+    });
+  }
+  document.getElementById("rec-lookup-btn").addEventListener("click", function () {
+    lookupRecommendations(document.getElementById("rec-visitor-id").value);
+  });
+
+  // ---- charts ----
+  function renderTopProducts() {
+    var rows = DATA.topProducts;
+    var labels = rows.map(function (r) {
+      return r.name.length > 28 ? r.name.slice(0, 28) + "…" : r.name;
+    });
+    var ctx = document.getElementById("top-products-chart");
+    new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels: labels,
+        datasets: [
+          { label: "Views", data: rows.map(function (r) { return r.views; }), backgroundColor: "#5b8cff" },
+          { label: "Add to cart", data: rows.map(function (r) { return r.add_to_carts; }), backgroundColor: "#8c5bff" },
+          { label: "Purchases", data: rows.map(function (r) { return r.purchases; }), backgroundColor: "#5bffb0" },
+        ],
+      },
+      options: {
+        responsive: true,
+        scales: {
+          x: { ticks: { color: "#9aa4b8" }, stacked: true },
+          y: { beginAtZero: true, ticks: { color: "#9aa4b8" }, stacked: true },
+        },
+        plugins: { legend: { labels: { color: "#e6e9ef" } } },
+      },
+    });
+  }
+
+  function renderEventSummary() {
+    var rows = DATA.eventSummary;
+    var days = Array.from(new Set(rows.map(function (r) { return r.day; }))).sort();
+    var eventTypes = Array.from(new Set(rows.map(function (r) { return r.event_type; })));
+    var colors = { view: "#5b8cff", add_to_cart: "#8c5bff", purchase: "#5bffb0" };
+    var datasets = eventTypes.map(function (type) {
+      return {
+        label: type,
+        data: days.map(function (day) {
+          var row = rows.find(function (r) { return r.day === day && r.event_type === type; });
+          return row ? row.count : 0;
+        }),
+        borderColor: colors[type] || "#e6e9ef",
+        tension: 0.25,
+      };
+    });
+    var ctx = document.getElementById("event-summary-chart");
+    new Chart(ctx, {
+      type: "line",
+      data: { labels: days, datasets: datasets },
+      options: {
+        responsive: true,
+        scales: { x: { ticks: { color: "#9aa4b8" } }, y: { beginAtZero: true, ticks: { color: "#9aa4b8" } } },
+        plugins: { legend: { labels: { color: "#e6e9ef" } } },
+      },
+    });
+  }
+
+  function renderTuning() {
+    var statusEl = document.getElementById("tuning-status");
+    var container = document.getElementById("tuning-decisions");
+    var status = DATA.tuningStatus;
+    if (status.postgres) {
+      var pg = status.postgres.active_auto_indexes || [];
+      var cass = status.cassandra || {};
+      var es = status.elasticsearch || {};
+      statusEl.textContent =
+        pg.length + " auto-index(es) active · " +
+        (cass.hot_products || 0) + " hot / " + (cass.cold_products || 0) + " cold products · " +
+        "ES refresh: " + (es.mode || "normal");
+    }
+    container.innerHTML = "";
+    var decisions = DATA.tuningDecisions;
+    if (!decisions || decisions.length === 0) {
+      container.innerHTML = '<div class="empty">No decisions yet -- drive some real traffic to see the optimizer act.</div>';
+      return;
+    }
+    decisions.forEach(function (d) {
+      var div = document.createElement("div");
+      div.className = "result-item";
+      div.innerHTML =
+        "<div><strong>[" + escapeHtml(d.store) + "] " + escapeHtml(d.action) + "</strong><br>" +
+        '<span class="meta">' + escapeHtml(d.target) + " &middot; " + escapeHtml(d.reason) + "</span></div>" +
+        '<div class="meta">' + new Date(d.ts).toLocaleString() + "</div>";
+      container.appendChild(div);
+    });
+  }
+
+  doSearch(false);
+  lookupRecommendations(document.getElementById("rec-visitor-id").value);
+  renderTopProducts();
+  renderEventSummary();
+  renderTuning();
+})();
+</script>
+</body>
+</html>
