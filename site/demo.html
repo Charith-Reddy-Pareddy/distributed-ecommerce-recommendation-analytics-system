@@ -65,6 +65,10 @@
   .product-side a:hover { text-decoration: underline; }
   .empty { color: var(--muted); font-size: 0.85rem; font-style: italic; }
   canvas { width: 100% !important; }
+  .mini-chart { margin-top: 1rem; }
+  .mini-chart:first-of-type { margin-top: 0.5rem; }
+  .mini-chart h4 { margin: 0 0 0.4rem; font-size: 0.75rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+  .mini-chart-canvas { height: 280px; position: relative; }
 
   footer { padding: 1.5rem 2rem 3rem; max-width: 1000px; margin: 0 auto; color: var(--muted); font-size: 0.8rem; }
 </style>
@@ -121,8 +125,19 @@
 
   <section class="card">
     <h2>Top Products <span class="badge">Postgres / SQL</span> <span class="badge frozen">Frozen data</span></h2>
-    <p class="subtitle">Views, cart-adds, and purchases for real catalog products, from a real analytics-service snapshot.</p>
-    <canvas id="top-products-chart" height="140"></canvas>
+    <p class="subtitle">Views, cart-adds, and purchases for real catalog products, from a real analytics-service snapshot. Each metric gets its own scale -- views naturally outnumber purchases by 10-50x, so one shared axis would flatten add-to-carts and purchases to invisible slivers.</p>
+    <div class="mini-chart">
+      <h4>Views</h4>
+      <div class="mini-chart-canvas"><canvas id="top-products-views"></canvas></div>
+    </div>
+    <div class="mini-chart">
+      <h4>Add to cart</h4>
+      <div class="mini-chart-canvas"><canvas id="top-products-cart"></canvas></div>
+    </div>
+    <div class="mini-chart">
+      <h4>Purchases</h4>
+      <div class="mini-chart-canvas"><canvas id="top-products-purchases"></canvas></div>
+    </div>
   </section>
 
   <section class="card">
@@ -301,31 +316,42 @@
   });
 
   // ---- charts ----
-  function renderTopProducts() {
-    var rows = DATA.topProducts;
+  // Three separate horizontal bar charts, not one stacked chart with three
+  // series sharing an axis -- views naturally outnumber purchases by
+  // 10-50x (a funnel, not noise), so a shared linear scale flattens
+  // add-to-carts and purchases into imperceptible slivers next to the
+  // views bar. Each metric gets its own scale instead. Horizontal, not
+  // vertical, so product names read normally instead of needing rotation
+  // and truncation.
+  function renderTopProductsBar(canvasId, rows, valueKey, color) {
     var labels = rows.map(function (r) {
-      return r.name.length > 28 ? r.name.slice(0, 28) + "…" : r.name;
+      return r.name.length > 40 ? r.name.slice(0, 40) + "…" : r.name;
     });
-    var ctx = document.getElementById("top-products-chart");
-    new Chart(ctx, {
+    var data = rows.map(function (r) { return r[valueKey]; });
+    new Chart(document.getElementById(canvasId), {
       type: "bar",
-      data: {
-        labels: labels,
-        datasets: [
-          { label: "Views", data: rows.map(function (r) { return r.views; }), backgroundColor: "#2a78d6" },
-          { label: "Add to cart", data: rows.map(function (r) { return r.add_to_carts; }), backgroundColor: "#eb6834" },
-          { label: "Purchases", data: rows.map(function (r) { return r.purchases; }), backgroundColor: "#1baf7a" },
-        ],
-      },
+      data: { labels: labels, datasets: [{ data: data, backgroundColor: color, borderRadius: 4, maxBarThickness: 20 }] },
       options: {
+        indexAxis: "y",
         responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
         scales: {
-          x: { ticks: { color: "#6b6a63" }, stacked: true },
-          y: { beginAtZero: true, ticks: { color: "#6b6a63" }, stacked: true },
+          x: { beginAtZero: true, ticks: { color: "#6b6a63" } },
+          y: { ticks: { color: "#0b0b0b", autoSkip: false } },
         },
-        plugins: { legend: { labels: { color: "#0b0b0b" } } },
       },
     });
+  }
+
+  function renderTopProducts() {
+    // Same product order across all three charts -- otherwise a viewer
+    // can't track one product from the views chart into the purchases
+    // chart below it.
+    var rows = DATA.topProducts.slice().sort(function (a, b) { return b.views - a.views; });
+    renderTopProductsBar("top-products-views", rows, "views", "#2a78d6");
+    renderTopProductsBar("top-products-cart", rows, "add_to_carts", "#eb6834");
+    renderTopProductsBar("top-products-purchases", rows, "purchases", "#1baf7a");
   }
 
   function renderEventSummary() {
