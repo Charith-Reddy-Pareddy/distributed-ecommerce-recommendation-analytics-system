@@ -18,7 +18,13 @@ def get_user(db: Session, user_id: int) -> models.User | None:
 def list_users(
     db: Session, skip: int = 0, limit: int = 100, country: str | None = None
 ) -> list[models.User]:
+    # Newest first, explicitly -- offset/limit pagination with no ORDER BY
+    # has unspecified row order per the SQL standard, so which rows a
+    # given page returns isn't guaranteed to stay stable between calls.
+    # Ordering by id also means a just-created row is always the first
+    # result for its filters, not just eventually-consistent with a large
+    # enough limit as this table grows.
     query = db.query(models.User)
     if country:
         query = query.filter(models.User.country == country)
-    return query.offset(skip).limit(limit).all()
+    return query.order_by(models.User.id.desc()).offset(skip).limit(limit).all()
