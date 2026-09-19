@@ -9,6 +9,7 @@ from pyspark.sql.functions import col, collect_list, count, from_json, session_w
 from pyspark.sql.types import IntegerType, StringType, StructField, StructType
 
 from cassandra_writer import write_demand_count
+from welford import WelfordAnomalyTracker
 
 KAFKA_BOOTSTRAP_SERVERS = os.getenv("KAFKA_BOOTSTRAP_SERVERS", "kafka:9092")
 HDFS_URI = os.getenv("HDFS_URI", "hdfs://hdfs-namenode:9000")
@@ -75,14 +76,15 @@ def run_anomaly_detection(events):
         .agg(count("*").alias("event_count"))
     )
 
-    # Welford's online algorithm for running mean/variance per product
-    running_stats: dict[int, tuple[int, float, float]] = {}
+    # See welford.py's module docstring for why this needs an explicit
+    # idempotency guard that write_demand_count() below doesn't.
+    tracker = WelfordAnomalyTracker(Z_SCORE_THRESHOLD)
 
     def process_batch(batch_df, batch_id):
         rows = batch_df.collect()
         print(
             f"[BATCH] anomaly-detection batch_id={batch_id} "
-            f"window_rows={len(rows)} tracked_products={len(running_stats)}",
+            f"window_rows={len(rows)} tracked_products={tracker.tracked_product_count()}",
             flush=True,
         )
         for row in rows:
@@ -93,27 +95,17 @@ def run_anomaly_detection(events):
 
             write_demand_count(product_id, window_start, event_count)
 
-            n, mean, m2 = running_stats.get(product_id, (0, 0.0, 0.0))
-
-            if n >= 3:
-                variance = m2 / n
-                stddev = variance**0.5
-                if stddev > 0:
-                    z_score = (event_count - mean) / stddev
-                    if abs(z_score) > Z_SCORE_THRESHOLD:
-                        print(
-                            f"[ANOMALY] batch={batch_id} product_id={product_id} "
-                            f"window_end={window_end} count={event_count} "
-                            f"running_mean={mean:.2f} running_stddev={stddev:.2f} "
-                            f"z_score={z_score:.2f}",
-                            flush=True,
-                        )
-
-            new_n = n + 1
-            delta = event_count - mean
-            new_mean = mean + delta / new_n
-            new_m2 = m2 + delta * (event_count - new_mean)
-            running_stats[product_id] = (new_n, new_mean, new_m2)
+            stats = tracker.observe(product_id, window_start, event_count)
+            if stats is None:
+                continue
+            if stats["is_anomaly"]:
+                print(
+                    f"[ANOMALY] batch={batch_id} product_id={product_id} "
+                    f"window_end={window_end} count={event_count} "
+                    f"running_mean={stats['mean']:.2f} running_stddev={stats['stddev']:.2f} "
+                    f"z_score={stats['z_score']:.2f}",
+                    flush=True,
+                )
 
     return (
         counts.writeStream.outputMode("update")
