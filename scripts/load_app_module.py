@@ -23,9 +23,26 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # model.py imports it transitively via kafka_consumer.py just to
 # reference the Consumer class -- so a stub avoids that install risk
 # entirely instead of gambling on it working in CI or locally.
+#
+# Producer needs actual no-op methods, not just a bare class: unlike
+# Consumer (only ever instantiated inside a function that tests don't
+# call), event-service's kafka_producer.py does `_producer =
+# Producer({...})` at module level, which runs the instant the module
+# is loaded -- and produce()/poll()/flush() get called for real by
+# tests that exercise publish_event()/flush() themselves.
 if "confluent_kafka" not in sys.modules:
     stub = types.ModuleType("confluent_kafka")
-    stub.Consumer = type("Consumer", (), {})
+    stub.Consumer = type("Consumer", (), {"__init__": lambda self, *a, **k: None})
+    stub.Producer = type(
+        "Producer",
+        (),
+        {
+            "__init__": lambda self, *a, **k: None,
+            "produce": lambda self, *a, **k: None,
+            "poll": lambda self, *a, **k: 0,
+            "flush": lambda self, *a, **k: 0,
+        },
+    )
     sys.modules["confluent_kafka"] = stub
 
 

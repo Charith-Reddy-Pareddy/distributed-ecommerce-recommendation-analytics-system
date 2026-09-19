@@ -1,13 +1,27 @@
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 from fastapi import FastAPI
 
 from . import schemas
-from .kafka_producer import publish_event
+from .kafka_producer import flush, publish_event
 from .metrics import MetricsMiddleware, metrics_response
 
-app = FastAPI(title="Event Ingestion Service")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    yield
+    # event-service keeps no database of its own -- Kafka is its only
+    # persistence, so a message still sitting in the producer's internal
+    # buffer at shutdown (produce() batches for throughput; it doesn't
+    # block until the broker acks) is silently lost even though the
+    # client already got a 202 "accepted" response for it. flush() was
+    # defined for exactly this but was never actually called anywhere.
+    flush()
+
+
+app = FastAPI(title="Event Ingestion Service", lifespan=lifespan)
 app.add_middleware(MetricsMiddleware)
 
 
