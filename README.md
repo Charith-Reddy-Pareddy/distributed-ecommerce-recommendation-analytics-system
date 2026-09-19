@@ -1,5 +1,7 @@
 # Distributed E-Commerce Recommendation Analytics System
 
+**[Live project site](https://charith-reddy-pareddy.github.io/distributed-ecommerce-recommendation-analytics-system/)** -- research questions, architecture, and results charted from this repo's own `experiments/*/results/*.jsonl` data.
+
 A demo e-commerce backend that turns ordinary shopping activity --
 browsing, adding to cart, buying -- into real-time product
 recommendations, live analytics, and a backend that tunes its own
