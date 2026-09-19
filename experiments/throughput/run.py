@@ -25,6 +25,22 @@ restart and never commit offsets (see
 services/recommendation-service/app/kafka_consumer.py), by design, so
 there's nothing in Kafka's __consumer_offsets topic for
 kafka-consumer-groups.sh to report for them.
+
+user_id/product_id are drawn from a reserved high range (see
+SYNTHETIC_ID_LOW/HIGH below), not product-service's real id space.
+event-service never validates product_id against product-service's
+catalog, and recommendation-service accumulates weighted interaction
+history per id forever with no expiry (Kafka retains every event, and
+a fresh consumer replays the whole topic on every restart) -- so a
+low product_id range here would eventually get "reserved" by this
+purely-synthetic traffic, and product-service's own real,
+permanently-incrementing catalog counter would later walk into the
+same numbers and mint genuinely new products that inherit unrelated
+phantom interaction history from this script's old runs the moment
+they're created. That's exactly what happened with the original
+`random.randint(1, 10_000)` range once the real catalog counter (over
+many dev/test sessions) reached into it -- see the tests/integration
+e2e test fixes for the observed failure this caused.
 """
 import asyncio
 import json
@@ -47,6 +63,11 @@ RESULTS_DIR = Path(__file__).resolve().parent / "results"
 
 TARGET_RATES = [100, 250, 500, 750, 1000, 1500]
 DURATION_S = 15
+# Reserved band, disjoint from product-service's real catalog id space
+# (a slowly-incrementing counter, in the low thousands even after
+# extensive dev/test use) -- see module docstring.
+SYNTHETIC_ID_LOW = 5_000_000
+SYNTHETIC_ID_HIGH = 6_000_000
 CONCURRENCY = 256  # matches scripts/kafka_load_test.py's default 8 processes x 32
 SETTLE_S = 5  # between rates, so lag from the previous rate drains
 REQUEST_TIMEOUT_S = 3.0  # once the server is saturated, a slow request should
@@ -60,8 +81,8 @@ async def _paced_worker(rate_per_worker, duration, latencies, counters):
         while time.monotonic() < deadline:
             start = time.perf_counter()
             payload = {
-                "user_id": random.randint(1, 10_000),
-                "product_id": random.randint(1, 10_000),
+                "user_id": random.randint(SYNTHETIC_ID_LOW, SYNTHETIC_ID_HIGH),
+                "product_id": random.randint(SYNTHETIC_ID_LOW, SYNTHETIC_ID_HIGH),
                 "event_type": random.choice(EVENT_TYPES),
             }
             try:

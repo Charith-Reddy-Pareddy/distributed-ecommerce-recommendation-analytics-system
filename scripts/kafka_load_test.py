@@ -19,13 +19,25 @@ import httpx
 
 EVENT_SERVICE = "http://localhost:8003"
 EVENT_TYPES = ["view"] * 6 + ["add_to_cart"] * 3 + ["purchase"] * 1
+# Reserved band, disjoint from product-service's real, permanently-
+# incrementing catalog id space -- event-service never validates
+# product_id against the catalog, and recommendation-service
+# accumulates weighted interaction history per id forever (Kafka
+# retains every event; a fresh consumer replays the whole topic on
+# restart), so a low id range here eventually collides with a later,
+# genuinely new catalog product that inherits this script's unrelated
+# old interaction history the moment it's created. See
+# experiments/throughput/run.py's docstring for the observed failure
+# this caused with the original random.randint(1, 10_000) range.
+SYNTHETIC_ID_LOW = 5_000_000
+SYNTHETIC_ID_HIGH = 6_000_000
 
 
 async def _fire_events(client: httpx.AsyncClient, deadline: float, counters: dict) -> None:
     while time.monotonic() < deadline:
         payload = {
-            "user_id": random.randint(1, 10_000),
-            "product_id": random.randint(1, 10_000),
+            "user_id": random.randint(SYNTHETIC_ID_LOW, SYNTHETIC_ID_HIGH),
+            "product_id": random.randint(SYNTHETIC_ID_LOW, SYNTHETIC_ID_HIGH),
             "event_type": random.choice(EVENT_TYPES),
         }
         try:
