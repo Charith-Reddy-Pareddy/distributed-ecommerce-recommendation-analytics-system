@@ -141,8 +141,40 @@ document.getElementById("rec-lookup-btn").addEventListener("click", () => {
 
 // --- SQL analytics charts (Postgres, via analytics-service) --------------
 
-let topProductsChart = null;
+// Three separate horizontal bar charts, not one stacked chart with three
+// series sharing an axis -- views naturally outnumber purchases by 10-50x
+// (a funnel, not noise), so a shared linear scale flattens add-to-carts
+// and purchases into imperceptible slivers next to the views bar. Each
+// metric gets its own scale instead. Horizontal, not vertical, so product
+// names read normally instead of needing rotation and truncation.
+const topProductsCharts = { views: null, cart: null, purchases: null };
 let eventSummaryChart = null;
+
+function renderTopProductsBar(key, canvasId, rows, valueKey, color) {
+  const labels = rows.map((r) => (r.name.length > 40 ? r.name.slice(0, 40) + "…" : r.name));
+  const data = rows.map((r) => r[valueKey]);
+  const existing = topProductsCharts[key];
+  if (existing) {
+    existing.data.labels = labels;
+    existing.data.datasets[0].data = data;
+    existing.update();
+    return;
+  }
+  topProductsCharts[key] = new Chart(document.getElementById(canvasId), {
+    type: "bar",
+    data: { labels, datasets: [{ data, backgroundColor: color, borderRadius: 4, maxBarThickness: 20 }] },
+    options: {
+      indexAxis: "y",
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { beginAtZero: true, ticks: { color: "#6b6a63" } },
+        y: { ticks: { color: "#0b0b0b", autoSkip: false } },
+      },
+    },
+  });
+}
 
 async function refreshTopProducts() {
   const allRows = await getJSON("/api/top-products?limit=10");
@@ -165,36 +197,17 @@ async function refreshTopProducts() {
   // Stats can reference a product_id that no longer exists in the catalog
   // (e.g. deleted after the stat was recorded) -- skip those rather than
   // showing a bare, unlabeled id in the chart.
-  const rows = allRows.filter((r) => productsById[r.product_id]);
-  const labels = rows.map((r) => {
-    const name = productsById[r.product_id].name;
-    return name.length > 28 ? name.slice(0, 28) + "…" : name;
-  });
+  const rows = allRows
+    .filter((r) => productsById[r.product_id])
+    .map((r) => ({ ...r, name: productsById[r.product_id].name }))
+    // Same product order across all three charts -- otherwise a viewer
+    // can't track one product from the views chart into the purchases
+    // chart below it.
+    .sort((a, b) => b.views - a.views);
 
-  const ctx = document.getElementById("top-products-chart");
-  const datasets = [
-    { label: "Views", data: rows.map((r) => r.views), backgroundColor: "#2a78d6" },
-    { label: "Add to cart", data: rows.map((r) => r.add_to_carts), backgroundColor: "#eb6834" },
-    { label: "Purchases", data: rows.map((r) => r.purchases), backgroundColor: "#1baf7a" },
-  ];
-  if (topProductsChart) {
-    topProductsChart.data.labels = labels;
-    topProductsChart.data.datasets = datasets;
-    topProductsChart.update();
-    return;
-  }
-  topProductsChart = new Chart(ctx, {
-    type: "bar",
-    data: { labels, datasets },
-    options: {
-      responsive: true,
-      scales: {
-        x: { ticks: { color: "#6b6a63" }, stacked: true },
-        y: { beginAtZero: true, ticks: { color: "#6b6a63" }, stacked: true },
-      },
-      plugins: { legend: { labels: { color: "#0b0b0b" } } },
-    },
-  });
+  renderTopProductsBar("views", "top-products-views", rows, "views", "#2a78d6");
+  renderTopProductsBar("cart", "top-products-cart", rows, "add_to_carts", "#eb6834");
+  renderTopProductsBar("purchases", "top-products-purchases", rows, "purchases", "#1baf7a");
 }
 
 async function refreshEventSummary() {

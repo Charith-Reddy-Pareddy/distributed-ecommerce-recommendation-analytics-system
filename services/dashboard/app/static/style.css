@@ -174,3 +174,25 @@ button:hover { opacity: 0.9; }
 canvas {
   width: 100% !important;
 }
+
+.mini-chart {
+  margin-top: 1rem;
+}
+
+.mini-chart:first-of-type {
+  margin-top: 0.5rem;
+}
+
+.mini-chart h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.mini-chart-canvas {
+  height: 280px;
+  position: relative;
+}

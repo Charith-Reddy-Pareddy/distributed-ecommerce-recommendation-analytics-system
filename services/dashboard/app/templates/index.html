@@ -50,8 +50,19 @@
 
     <section class="card">
       <h2>Top Products <span class="badge">Postgres / SQL</span></h2>
-      <p class="subtitle">Views, cart-adds, and purchases per product, aggregated live from analytics-service's SQL tables.</p>
-      <canvas id="top-products-chart" height="140"></canvas>
+      <p class="subtitle">Views, cart-adds, and purchases per product, aggregated live from analytics-service's SQL tables. Each metric gets its own scale -- views naturally outnumber purchases by 10-50x, so one shared axis would flatten add-to-carts and purchases to invisible slivers.</p>
+      <div class="mini-chart">
+        <h4>Views</h4>
+        <div class="mini-chart-canvas"><canvas id="top-products-views"></canvas></div>
+      </div>
+      <div class="mini-chart">
+        <h4>Add to cart</h4>
+        <div class="mini-chart-canvas"><canvas id="top-products-cart"></canvas></div>
+      </div>
+      <div class="mini-chart">
+        <h4>Purchases</h4>
+        <div class="mini-chart-canvas"><canvas id="top-products-purchases"></canvas></div>
+      </div>
     </section>
 
     <section class="card">
