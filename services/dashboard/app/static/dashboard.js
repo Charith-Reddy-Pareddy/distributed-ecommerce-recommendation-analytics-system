@@ -173,9 +173,9 @@ async function refreshTopProducts() {
 
   const ctx = document.getElementById("top-products-chart");
   const datasets = [
-    { label: "Views", data: rows.map((r) => r.views), backgroundColor: "#5b8cff" },
-    { label: "Add to cart", data: rows.map((r) => r.add_to_carts), backgroundColor: "#8c5bff" },
-    { label: "Purchases", data: rows.map((r) => r.purchases), backgroundColor: "#5bffb0" },
+    { label: "Views", data: rows.map((r) => r.views), backgroundColor: "#2a78d6" },
+    { label: "Add to cart", data: rows.map((r) => r.add_to_carts), backgroundColor: "#eb6834" },
+    { label: "Purchases", data: rows.map((r) => r.purchases), backgroundColor: "#1baf7a" },
   ];
   if (topProductsChart) {
     topProductsChart.data.labels = labels;
@@ -189,10 +189,10 @@ async function refreshTopProducts() {
     options: {
       responsive: true,
       scales: {
-        x: { ticks: { color: "#9aa4b8" }, stacked: true },
-        y: { beginAtZero: true, ticks: { color: "#9aa4b8" }, stacked: true },
+        x: { ticks: { color: "#6b6a63" }, stacked: true },
+        y: { beginAtZero: true, ticks: { color: "#6b6a63" }, stacked: true },
       },
-      plugins: { legend: { labels: { color: "#e6e9ef" } } },
+      plugins: { legend: { labels: { color: "#0b0b0b" } } },
     },
   });
 }
@@ -202,7 +202,7 @@ async function refreshEventSummary() {
 
   const days = [...new Set(rows.map((r) => r.day))].sort();
   const eventTypes = [...new Set(rows.map((r) => r.event_type))];
-  const colors = { view: "#5b8cff", add_to_cart: "#8c5bff", purchase: "#5bffb0" };
+  const colors = { view: "#2a78d6", add_to_cart: "#eb6834", purchase: "#1baf7a" };
 
   const datasets = eventTypes.map((type) => ({
     label: type,
@@ -210,7 +210,7 @@ async function refreshEventSummary() {
       const row = rows.find((r) => r.day === day && r.event_type === type);
       return row ? row.count : 0;
     }),
-    borderColor: colors[type] || "#e6e9ef",
+    borderColor: colors[type] || "#0b0b0b",
     tension: 0.25,
   }));
 
@@ -226,8 +226,8 @@ async function refreshEventSummary() {
     data: { labels: days, datasets },
     options: {
       responsive: true,
-      scales: { x: { ticks: { color: "#9aa4b8" } }, y: { beginAtZero: true, ticks: { color: "#9aa4b8" } } },
-      plugins: { legend: { labels: { color: "#e6e9ef" } } },
+      scales: { x: { ticks: { color: "#6b6a63" } }, y: { beginAtZero: true, ticks: { color: "#6b6a63" } } },
+      plugins: { legend: { labels: { color: "#0b0b0b" } } },
     },
   });
 }
