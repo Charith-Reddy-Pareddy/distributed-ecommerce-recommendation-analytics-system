@@ -10,6 +10,7 @@ venv/
 .vscode/
 pgdata/
 data/retailrocket/*.csv
+data/catalog_reviews.csv
 spark-warehouse/
 derby.log
 metastore_db/
