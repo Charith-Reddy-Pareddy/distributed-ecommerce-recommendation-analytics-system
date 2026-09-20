@@ -2,19 +2,32 @@
 McAuley-Lab/Amazon-Reviews-2023 dataset and writes them to
 data/amazon_products.json for scripts/seed_data.py to load.
 
-Reads only the first Parquet row group of each category via HTTP
-range requests (pyarrow + fsspec), enough to sample a few hundred
-products without downloading full multi-GB category files.
+Downloads one Parquet shard per category (tens of MB, not the full
+multi-GB category file) and reads only its first row group -- enough
+to sample a few hundred products without needing the whole shard in
+memory as a DataFrame.
+
+Used to stream this via fsspec's HTTP filesystem + range requests
+directly against the `resolve/main/...` URL, without downloading the
+whole shard first. That stopped working -- HuggingFace now serves
+large files through a redirect to a signed, content-addressed (Xet)
+CDN URL, and fsspec's HTTP filesystem can't get a file size back from
+that CDN's response headers the way it could from the old direct LFS
+URLs (confirmed: even re-pointing it at the already-resolved final CDN
+URL still raises FileNotFoundError). A plain `requests.get` following
+the redirect, read into memory, works reliably -- these shards are
+tens of MB, not the multi-GB full category files, so buffering one
+fully is fine.
 
 Usage:
 
-    pip install pyarrow fsspec aiohttp requests
+    pip install pyarrow requests
     python scripts/fetch_amazon_products.py
 """
+import io
 import json
 from pathlib import Path
 
-import fsspec
 import pyarrow.parquet as pq
 import requests
 
@@ -33,13 +46,14 @@ def first_shard_url(category: str) -> str:
     return f"https://huggingface.co/datasets/McAuley-Lab/Amazon-Reviews-2023/resolve/main/{files[0]}"
 
 
-def extract_category(category: str, fs) -> list[dict]:
+def extract_category(category: str, limit: int = PER_CATEGORY) -> list[dict]:
     url = first_shard_url(category)
     print(f"Reading {category} from {url.rsplit('/', 1)[-1]}...")
 
-    with fs.open(url) as f:
-        parquet_file = pq.ParquetFile(f)
-        table = parquet_file.read_row_group(0)
+    resp = requests.get(url, timeout=180)
+    resp.raise_for_status()
+    parquet_file = pq.ParquetFile(io.BytesIO(resp.content))
+    table = parquet_file.read_row_group(0)
 
     df = table.to_pandas()
     candidates = df[(df["title"].str.len() > 5) & df["price"].notna() & (df["price"] != "None")]
@@ -79,7 +93,7 @@ def extract_category(category: str, fs) -> list[dict]:
                 "asin": row["parent_asin"],
             }
         )
-        if len(products) >= PER_CATEGORY:
+        if len(products) >= limit:
             break
 
     print(f"  extracted {len(products)} from {category}")
@@ -87,10 +101,9 @@ def extract_category(category: str, fs) -> list[dict]:
 
 
 def main() -> None:
-    fs = fsspec.filesystem("https")
     all_products: list[dict] = []
     for category in CATEGORIES:
-        all_products.extend(extract_category(category, fs))
+        all_products.extend(extract_category(category))
 
     print(f"\nTotal: {len(all_products)} products")
     OUTPUT_PATH.parent.mkdir(exist_ok=True)

@@ -72,7 +72,12 @@ def generate_events(n_users, weeks, seed, catalog_path=CATALOG_PATH):
 
     rows = []
     for user_id in range(1, n_users + 1):
-        n_preferred = rng.integers(1, 4)
+        # min() guards a single-category catalog (e.g. a cross-category
+        # research catalog fetched from one Amazon category): choice()
+        # with replace=False can't sample more items than the population
+        # has, and the demo catalog's 4 categories happened to always
+        # cover n_preferred's max of 3, silently hiding this.
+        n_preferred = min(rng.integers(1, 4), len(category_names))
         preferred = rng.choice(category_names, size=n_preferred, replace=False)
 
         n_sessions = rng.poisson(SESSIONS_PER_USER_MEAN) + 1

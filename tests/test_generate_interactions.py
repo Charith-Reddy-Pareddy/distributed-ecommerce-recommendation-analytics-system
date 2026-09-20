@@ -106,6 +106,24 @@ def test_generate_events_different_seeds_produce_different_data():
     assert not df1.equals(df2)
 
 
+def test_generate_events_handles_a_single_category_catalog(tmp_path):
+    # Regression test for a real bug found building the cross-category
+    # (RQ5) experiment: n_preferred (1-3) was sampled with rng.choice(...,
+    # replace=False) against category_names with no bound check -- fine
+    # for the demo catalog's 4 categories (n_preferred's max of 3 always
+    # fit), but ValueError: "Cannot take a larger sample than population"
+    # for any catalog with fewer than 3 categories, like a single-category
+    # research catalog fetched from one Amazon category (all products
+    # share one category label).
+    single_category_catalog = tmp_path / "catalog.json"
+    single_category_catalog.write_text(
+        '[{"category": "beauty"}, {"category": "beauty"}, {"category": "beauty"}]'
+    )
+    df = gen.generate_events(n_users=5, weeks=1, seed=0, catalog_path=single_category_catalog)
+    assert len(df) > 0
+    assert set(df["product_id"]) <= {1, 2, 3}
+
+
 def test_generate_events_timestamps_sorted_ascending():
     df = gen.generate_events(n_users=10, weeks=2, seed=6)
     assert df["timestamp"].is_monotonic_increasing
