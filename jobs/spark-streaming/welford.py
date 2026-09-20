@@ -11,17 +11,39 @@ later. Pulled out of session_and_anomaly.py into its own pure,
 Spark-independent module specifically so this logic -- the exact thing
 that had the bug -- is unit-testable without a Spark test dependency.
 """
+import datetime
+
+# A checkpoint-recovery replay reprocesses the most recent uncommitted
+# micro-batch (seconds to minutes old, not hours), so remembering every
+# (product_id, window_start) pair ever seen for the life of a streaming
+# query that runs indefinitely (main() calls awaitAnyTermination()) is
+# an unbounded memory leak protecting against a scenario that only ever
+# happens near the current window. Retaining a generous multiple of
+# that catches every realistic replay without growing forever.
+DEFAULT_APPLIED_WINDOW_RETENTION = datetime.timedelta(hours=2)
 
 
 class WelfordAnomalyTracker:
-    def __init__(self, z_score_threshold: float, min_observations: int = 3):
+    def __init__(self, z_score_threshold: float, min_observations: int = 3, applied_window_retention=None):
         self.z_score_threshold = z_score_threshold
         self.min_observations = min_observations
+        self.applied_window_retention = applied_window_retention or DEFAULT_APPLIED_WINDOW_RETENTION
         self._running_stats: dict[int, tuple[int, float, float]] = {}
         self._applied_windows: set[tuple] = set()  # (product_id, window_start) pairs
+        self._max_window_start = None
 
     def tracked_product_count(self) -> int:
         return len(self._running_stats)
+
+    def _prune_applied_windows(self, window_start):
+        # Only worth scanning when a genuinely new, later window boundary
+        # shows up -- with one Spark trigger per window interval, that's
+        # roughly once per micro-batch, not once per observe() call.
+        if self._max_window_start is not None and window_start <= self._max_window_start:
+            return
+        self._max_window_start = window_start
+        cutoff = window_start - self.applied_window_retention
+        self._applied_windows = {k for k in self._applied_windows if k[1] >= cutoff}
 
     def observe(self, product_id: int, window_start, event_count: int) -> dict | None:
         """Folds one (product_id, window_start, event_count) observation into
@@ -36,6 +58,7 @@ class WelfordAnomalyTracker:
         if window_key in self._applied_windows:
             return None
         self._applied_windows.add(window_key)
+        self._prune_applied_windows(window_start)
 
         n, mean, m2 = self._running_stats.get(product_id, (0, 0.0, 0.0))
 
