@@ -46,6 +46,53 @@ def first_shard_url(category: str) -> str:
     return f"https://huggingface.co/datasets/McAuley-Lab/Amazon-Reviews-2023/resolve/main/{files[0]}"
 
 
+def product_from_row(row, category: str) -> dict | None:
+    """Converts one raw_meta parquet row into a catalog product dict,
+    or None if it fails the same quality filters extract_category()
+    always applied (real title, real price, at least one real image)
+    -- shared so scripts/build_catalog_from_reviews.py can apply the
+    identical extraction logic to a targeted set of ASINs instead of
+    just the first shard's first row group.
+    """
+    if not row["title"] or len(row["title"]) <= 5:
+        return None
+    if row["price"] is None or row["price"] == "None":
+        return None
+    images = row["images"]
+    if images is None or len(images["large"]) == 0:
+        return None
+    try:
+        price = float(row["price"])
+    except (ValueError, TypeError):
+        return None
+    if not (0 < price <= MAX_PRICE):
+        return None
+
+    brand = row["store"] or ""
+    if not brand:
+        try:
+            details = json.loads(row["details"]) if row["details"] else {}
+            brand = details.get("Brand", "")
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    return {
+        "name": row["title"][:200],
+        "category": category.lower().replace("_", " "),
+        "price": round(price, 2),
+        "description": (
+            row["description"][0]
+            if row["description"] is not None and len(row["description"]) > 0
+            else row["title"]
+        )[:500],
+        "brand": brand[:80] if brand else "Unknown",
+        "average_rating": float(row["average_rating"]) if row["average_rating"] else 0.0,
+        "rating_number": int(row["rating_number"]) if row["rating_number"] else 0,
+        "image": row["images"]["large"][0],
+        "asin": row["parent_asin"],
+    }
+
+
 def extract_category(category: str, limit: int = PER_CATEGORY) -> list[dict]:
     url = first_shard_url(category)
     print(f"Reading {category} from {url.rsplit('/', 1)[-1]}...")
@@ -56,43 +103,11 @@ def extract_category(category: str, limit: int = PER_CATEGORY) -> list[dict]:
     table = parquet_file.read_row_group(0)
 
     df = table.to_pandas()
-    candidates = df[(df["title"].str.len() > 5) & df["price"].notna() & (df["price"] != "None")]
-    candidates = candidates[candidates["images"].apply(lambda x: x is not None and len(x["large"]) > 0)]
-
     products = []
-    for _, row in candidates.iterrows():
-        try:
-            price = float(row["price"])
-        except (ValueError, TypeError):
-            continue
-        if not (0 < price <= MAX_PRICE):
-            continue
-
-        brand = row["store"] or ""
-        if not brand:
-            try:
-                details = json.loads(row["details"]) if row["details"] else {}
-                brand = details.get("Brand", "")
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        products.append(
-            {
-                "name": row["title"][:200],
-                "category": category.lower().replace("_", " "),
-                "price": round(price, 2),
-                "description": (
-                    row["description"][0]
-                    if row["description"] is not None and len(row["description"]) > 0
-                    else row["title"]
-                )[:500],
-                "brand": brand[:80] if brand else "Unknown",
-                "average_rating": float(row["average_rating"]) if row["average_rating"] else 0.0,
-                "rating_number": int(row["rating_number"]) if row["rating_number"] else 0,
-                "image": row["images"]["large"][0],
-                "asin": row["parent_asin"],
-            }
-        )
+    for _, row in df.iterrows():
+        product = product_from_row(row, category)
+        if product is not None:
+            products.append(product)
         if len(products) >= limit:
             break
 
