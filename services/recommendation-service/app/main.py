@@ -5,7 +5,6 @@ import httpx
 from fastapi import FastAPI, HTTPException
 
 from .hbase_client import get_precomputed_recommendations
-from .hybrid import blend
 from .model import engine
 from .metrics import MetricsMiddleware, metrics_response
 
@@ -64,10 +63,18 @@ async def popular(n: int = 10):
     return {"popular_products": await _enrich_with_products(scored)}
 
 
-# Batch-layer ALS recs from HBase. Enriched via product-service when the
-# loaded model is catalog-native (experiments/recommendation/catalog_als/),
-# whose ids match the demo catalog -- falls back to raw ids if enrichment
-# fails, since HBase may still hold the older RetailRocket-id-space model.
+# Batch-layer ALS recs from HBase, trained on RetailRocket (real
+# interaction data; see jobs/als-training/) -- its item ids are a
+# different, disjoint space from this project's own demo catalog
+# (RetailRocket has no relationship to these Amazon products), so
+# enrichment against product-service always fails here and this
+# always falls back to raw RetailRocket ids. That's an honest
+# consequence of using real interaction data with a real, different
+# catalog, not a bug to route around: a synthetic interaction log
+# generated *over* this catalog specifically to make the ids line up
+# used to exist for this, but a fabricated interaction log passed off
+# as data models train and evaluate on stops being honest research,
+# however consistently it's labeled "synthetic" in a docstring.
 @app.get("/recommendations/precomputed/{visitor_id}")
 async def precomputed(visitor_id: int):
     recs = await get_precomputed_recommendations(visitor_id)
@@ -89,28 +96,3 @@ async def precomputed(visitor_id: int):
 async def recommend(user_id: int, n: int = 5):
     scored = engine.recommend_for_user(user_id, top_n=n)
     return {"user_id": user_id, "recommendations": await _enrich_with_products(scored)}
-
-
-# Blends live item-CF with precomputed catalog-ALS (see hybrid.py for why
-# alpha=0.25). Falls back to pure CF if this user has no HBase row yet --
-# new users, or HBase not yet loaded with the catalog-native model.
-@app.get("/recommendations/hybrid/{user_id}")
-async def hybrid(user_id: int, n: int = 5, alpha: float | None = None):
-    cf_scored = engine.recommend_for_user(user_id, top_n=50)
-    als_recs = await get_precomputed_recommendations(user_id)
-
-    if not als_recs:
-        return {
-            "user_id": user_id,
-            "source": "item-cf (no precomputed ALS for this user)",
-            "recommendations": await _enrich_with_products(cf_scored[:n]),
-        }
-
-    als_scored = [(r["itemid"], r["score"]) for r in als_recs]
-    blend_kwargs = {} if alpha is None else {"alpha": alpha}
-    blended = blend(cf_scored, als_scored, **blend_kwargs)
-    return {
-        "user_id": user_id,
-        "source": "hybrid-cf-als",
-        "recommendations": await _enrich_with_products(blended[:n]),
-    }

@@ -151,10 +151,10 @@ def test_neighbor_cache_respects_requested_top_n():
 
 
 def test_recommend_for_user_considers_more_than_twenty_neighbors():
-    # Regression test for the neighbor-count ablation
-    # (experiments/recommendation/ablation_cf_neighbors.py): quality kept
-    # improving monotonically through 50 candidates, so recommend_for_user
-    # was raised from a hardcoded top_n=20 to NEIGHBOR_CACHE_SIZE (50).
+    # Regression test for recommend_for_user having been raised from a
+    # hardcoded top_n=20 to NEIGHBOR_CACHE_SIZE (50) -- see model.py's
+    # own comment on that change for the reasoning (considering more
+    # candidates only costs more at cache-refresh time, not per-request).
     # Build 25 items that all share equal, positive similarity to the
     # user's one seed item via a common second user -- with the old
     # top_n=20 only 20 of them could ever become candidates, capping the

@@ -165,11 +165,15 @@ class RecommendationEngine:
 
         candidate_scores: dict[int, float] = defaultdict(float)
         for product_id, weight in interacted.items():
-            # 50, not some smaller round number: the neighbor-count ablation
-            # (experiments/recommendation/ablation_cf_neighbors.py) tested
-            # 5/10/20/50 and found NDCG@10 still climbing at 50 with no
-            # plateau yet, so this rides NEIGHBOR_CACHE_SIZE rather than
-            # under-cutting it.
+            # 50, not some smaller round number: rides NEIGHBOR_CACHE_SIZE
+            # rather than under-cutting it, since considering more
+            # candidates only costs more at cache-refresh time (a periodic
+            # background job), not on the request path. (An ablation
+            # comparing 5/10/20/50 on a synthetic interaction log used to
+            # justify this with a specific number -- removed along with
+            # the rest of that log; see git history if you want the
+            # reasoning for why fabricated interactions aren't kept
+            # around just because they're labeled synthetic.)
             for similar_id, sim_score in self.similar_items(product_id, top_n=NEIGHBOR_CACHE_SIZE):
                 if similar_id in interacted:
                     continue

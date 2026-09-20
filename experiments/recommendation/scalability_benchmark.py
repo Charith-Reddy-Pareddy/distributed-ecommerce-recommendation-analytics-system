@@ -17,10 +17,14 @@ not a reimplementation:
     the largest scale tested.
   - "cached": similar_items() once the cache is warm -- O(1) lookup.
 
-Synthetic data only (this project's real catalog is 300 items) --
-Zipfian-skewed item popularity per user, same spirit as
-scripts/generate_interactions.py but generated directly into the
-engine's dicts for speed, not through Kafka/event-service.
+Synthetic *load*, not a recommendation-quality claim (this project's
+real catalog is 300 items) -- Zipfian-skewed item popularity per user,
+generated directly into the engine's dicts for speed, not through
+Kafka/event-service. This measures the CF cache's own latency/scaling
+behavior against the real production engine, not whether its
+recommendations are good, so the traffic pattern being synthetic
+carries none of the "passed off as real behavior" risk a fabricated
+interaction log used for quality evaluation would.
 """
 import random
 import statistics

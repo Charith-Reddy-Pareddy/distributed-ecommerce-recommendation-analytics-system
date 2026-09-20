@@ -58,8 +58,8 @@ def test_paired_bootstrap_diff_rejects_mismatched_lengths():
 
 def test_paired_bootstrap_diff_ci_excludes_zero_for_clear_effect():
     # A large, consistent gap between two arrays should show up as a CI
-    # that doesn't straddle zero -- the paired-bootstrap analogue of the
-    # significance check bootstrap_ci.py runs for CF vs. hybrid.
+    # that doesn't straddle zero -- e.g. for a real significance check
+    # comparing two models' per-user metric values.
     better = [0.9] * 50
     worse = [0.1] * 50
     diff, lower, upper = paired_bootstrap_diff(better, worse, n_resamples=500, seed=9)

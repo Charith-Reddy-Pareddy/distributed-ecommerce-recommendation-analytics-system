@@ -51,8 +51,9 @@ def evaluate_per_user(user_recommendations, user_actuals, k=10):
     """Same inputs as evaluate(). Returns dict[user_id -> {"precision",
     "recall", "map", "ndcg"}] -- the per-user values evaluate() averages,
     exposed separately so callers that need the underlying distribution
-    (e.g. bootstrap confidence intervals, experiments/recommendation/
-    bootstrap_ci.py) don't have to recompute it or reimplement scoring.
+    (e.g. bootstrap confidence intervals -- see
+    experiments/recommendation/bootstrap.py's bootstrap_ci()) don't have
+    to recompute it or reimplement scoring.
     """
     per_user = {}
     for user_id, actual in user_actuals.items():
