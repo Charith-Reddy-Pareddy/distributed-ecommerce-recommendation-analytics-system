@@ -542,6 +542,59 @@ updating only affected pairs) past whatever scale makes a full
 periodic rebuild itself too slow -- not attempted here, see
 [Limitations](#limitations).
 
+### RQ5: cross-category generalization
+
+Does the RQ2 model comparison hold on a different Amazon category, or
+is it an artifact of this project's own demo catalog's particular mix
+of categories (electronics, toys and games, musical instruments, cell
+phones and accessories)? Ran the exact same production code as RQ2
+(the real `RecommendationEngine` via `offline_models.build_cf_engine`,
+the same `metrics.py`) against a genuinely different, separately-fetched
+Amazon category -- **All_Beauty**, 201 real products, none of the main
+catalog's four categories -- with its own independently-generated
+synthetic interaction log at a comparable users-per-product density
+(2,000/300 in the main catalog; 1,340/201 here, same ratio). ALS and
+NeuMF are out of scope for this check -- see
+`experiments/recommendation/cross_category/README.md`.
+
+| Model | Precision@10 | Recall@10 | MAP@10 | NDCG@10 | Latency/request |
+|---|---|---|---|---|---|
+| Popularity | 0.1181 | 0.3918 | 0.1864 | 0.2905 | ~0ms |
+| Content-based (TF-IDF) | 0.0143 | 0.0462 | 0.0152 | 0.0303 | 0.05ms |
+| Item-CF (production code) | **0.1424** | **0.4739** | **0.3158** | **0.4269** | 116ms |
+
+**The comparison generalizes.** Item-CF beats popularity, which beats
+content-based, by a wide margin on both catalogs -- not an artifact of
+the main catalog's category mix.
+
+**Every model scores higher on the single-category catalog**, popularity
+and item-CF especially (NDCG@10 0.29 vs. 0.19, and 0.43 vs. 0.33 on the
+main catalog). Plausible mechanism: with only one category, a user's
+session has no "off-category exploration" branch diluting the signal
+(`generate_interactions.py`'s `P_OFF_CATEGORY` draw always resolves to
+the same category here), so both the popularity ranking and item-CF's
+co-occurrence structure are less noisy per user than on a 4-category mix.
+
+**Content-based stays weak either way, but for a different reason.** On
+the main catalog its similarity text is category+brand+description; on
+this single-category catalog, category is now *constant* across every
+product -- a real feature became a no-op one, leaving TF-IDF similarity
+riding on brand and description alone. Its score barely moves (0.014 ->
+0.014 precision@10), which is itself informative: category wasn't doing
+much useful work for content-based even when it *did* vary.
+
+**Building this surfaced two real bugs** in code every other
+recommendation experiment also depends on (both now fixed): (1)
+`scripts/fetch_amazon_products.py` -- used to build the *main* demo
+catalog too -- had silently stopped working, because HuggingFace now
+serves large dataset files through a redirect to a signed,
+content-addressed CDN URL that the fsspec-based streaming range-read
+this script used can't get a file size back from; and (2)
+`generate_interactions.py`'s per-user "preferred categories" draw
+(`rng.choice(..., size=n_preferred, replace=False)`, up to 3) crashes on
+any catalog with fewer than 3 categories -- fine for the main catalog's
+4, silently unguarded for a single-category one.
+
 ### Systems experiments
 
 **Throughput** (`experiments/throughput/`, paced load against the live
@@ -691,6 +744,12 @@ improving past 50 is untested and would need a wider sweep.
   production-scale traffic -- real effect sizes at higher, sustained
   load are plausibly different (likely larger for the Postgres index,
   since benefit compounds with query volume).
+- **RQ5 is one additional category, not a systematic sweep.** All_Beauty
+  generalizes the RQ2 ranking, but one category is an existence proof
+  ("this isn't specific to the main catalog"), not a claim it holds for
+  *every* category -- no bootstrap CI or multi-seed rerun was done on
+  this catalog the way RQ2/RQ3 got, and ALS/NeuMF weren't extended to
+  it (see [Future work](#future-work)).
 
 ## Future work
 
@@ -712,6 +771,9 @@ improving past 50 is untested and would need a wider sweep.
   makes that rebuild itself too slow -- not reached in this project's
   measurements (5,000 items), but the cache-build growth trend is the
   concrete argument for it.
+- Extend RQ5 to more categories (a systematic sweep, not one
+  additional data point), and to ALS/NeuMF, which were deliberately
+  out of scope for the first cross-category check.
 
 ## References
 

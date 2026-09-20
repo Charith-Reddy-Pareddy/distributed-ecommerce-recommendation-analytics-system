@@ -15,7 +15,7 @@ no shared database between them.
 
 ## Research questions
 
-Underneath the systems work, this project is really investigating four
+Underneath the systems work, this project is really investigating five
 questions:
 
 - **RQ1** — How does event-weighted implicit feedback (view/cart/
@@ -30,6 +30,9 @@ questions:
 - **RQ4** — Can workload-aware database optimization
   (`serving-optimizer`) reduce serving latency without excessive
   write/indexing overhead?
+- **RQ5** — Does RQ2's model comparison generalize to a different
+  Amazon product category, or is it specific to this project's own
+  4-category catalog mix?
 
 **Main contributions**: an event-driven distributed recommendation
 pipeline; a streaming and batch recommendation model sharing one
@@ -93,6 +96,19 @@ methodology.
   individual documents slower to become searchable (585ms → 1040ms)
   -- confirmed, not just documented. Cassandra hot/cold classification
   was verified correct against real, controlled traffic.
+- **RQ5 — the model comparison generalizes to a different category.**
+  Re-ran the exact same evaluation code against a genuinely different,
+  separately-fetched Amazon category (All_Beauty, 201 products, none of
+  the main catalog's four categories) with its own synthetic
+  interaction log. Item-CF beats popularity, which beats content-based,
+  by a wide margin on both catalogs -- the ranking isn't an artifact of
+  the main catalog's particular category mix. Every model actually
+  scores *higher* on the single-category catalog (NDCG@10 0.43 vs. 0.33
+  for item-CF), plausibly because a single-category catalog has no
+  "off-category exploration" diluting the signal. See
+  [experiments/recommendation/cross_category/](experiments/recommendation/cross_category/)
+  for the full writeup, including two real bugs this surfaced in code
+  every other recommendation experiment also depends on.
 - **Two more real experiments, run against the live stack:**
   measured Kafka throughput saturates around 200-400 events/sec with
   the full downstream consumer pipeline attached (well under an
