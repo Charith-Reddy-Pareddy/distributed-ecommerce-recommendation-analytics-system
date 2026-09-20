@@ -101,7 +101,13 @@ def run_recommendation_service_experiment():
 
     restart_service("recommendation-service")
     health_recovery_s = wait_healthy(f"{RECOMMENDATION_SERVICE}/health", deadline_s=60)
-    print(f"/health recovered in {health_recovery_s:.2f}s", flush=True)
+    # wait_healthy returns None on a genuine recovery failure -- exactly the
+    # case this experiment exists to catch, so it must be reported, not
+    # crash the script on a bare :.2f format spec before it gets recorded.
+    if health_recovery_s is not None:
+        print(f"/health recovered in {health_recovery_s:.2f}s", flush=True)
+    else:
+        print("/health never recovered within the 60s deadline", flush=True)
 
     # Replay isn't done just because /health is -- poll /recommendations/popular
     # until three consecutive reads are identical (a proxy for "the topic
@@ -124,7 +130,10 @@ def run_recommendation_service_experiment():
                 break
             time.sleep(2)
 
-    print(f"Recommendations stabilized {stabilized_s and round(stabilized_s,2)}s after restart", flush=True)
+    if stabilized_s is not None:
+        print(f"Recommendations stabilized {round(stabilized_s, 2)}s after restart", flush=True)
+    else:
+        print("Recommendations never stabilized within the 120s deadline", flush=True)
 
     result = {
         "confirmed_down_while_killed": down_confirmed,

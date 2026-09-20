@@ -173,19 +173,26 @@ def es_burst(n=20):
     return burst_wall_s, times_to_searchable
 
 
+def _fmt_ms(value):
+    # percentile() returns None when nothing became searchable within the
+    # burst's deadline -- a real, reportable outcome (ES saturated), not
+    # something a bare :.1f format spec should crash on before it's recorded.
+    return f"{value:.1f}ms" if value is not None else "n/a"
+
+
 def run_es_experiment():
     print("=== Elasticsearch refresh-interval experiment ===", flush=True)
     stop_optimizer()
     time.sleep(2)
     burst_wall_off, tts_off = es_burst(20)
     print(f"[optimizer OFF] burst_wall={burst_wall_off:.2f}s "
-          f"time_to_searchable_p50={percentile(tts_off,50):.1f}ms found={len(tts_off)}/20", flush=True)
+          f"time_to_searchable_p50={_fmt_ms(percentile(tts_off, 50))} found={len(tts_off)}/20", flush=True)
 
     start_optimizer()
     time.sleep(3)
     burst_wall_on, tts_on = es_burst(20)
     print(f"[optimizer ON] burst_wall={burst_wall_on:.2f}s "
-          f"time_to_searchable_p50={percentile(tts_on,50):.1f}ms found={len(tts_on)}/20", flush=True)
+          f"time_to_searchable_p50={_fmt_ms(percentile(tts_on, 50))} found={len(tts_on)}/20", flush=True)
 
     tuning_status = httpx.get(f"{OPTIMIZER_SERVICE}/tuning/status", timeout=10).json().get("elasticsearch")
 
