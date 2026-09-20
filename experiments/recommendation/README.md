@@ -35,6 +35,11 @@ destroying the last run's.
   product catalog's id space (unlike the separate RetailRocket model
   in `jobs/als-training/`, which stays in its own id space as a larger
   sparsity/weighting study).
+- `cross_category/` -- RQ5: does the RQ2 model comparison generalize to
+  a different Amazon category, or is it specific to this project's own
+  4-category catalog mix? Own catalog, own synthetic interaction log,
+  kept separate for the same reason `catalog_als/` is kept separate
+  from `jobs/als-training/`.
 - `neural_cf/` -- NeuMF (He et al., WWW 2017), a PyTorch GMF+MLP fusion
   model trained with implicit-feedback negative sampling -- the only
   actual neural network in this project.
