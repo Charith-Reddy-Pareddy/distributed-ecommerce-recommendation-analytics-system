@@ -25,28 +25,19 @@ os.environ.setdefault("PYSPARK_DRIVER_PYTHON", sys.executable)
 from pyspark.sql import SparkSession  # noqa: E402
 from pyspark.ml.recommendation import ALSModel  # noqa: E402
 
-from scripts.load_app_module import load_app_module  # noqa: E402
 from experiments.common import record_result  # noqa: E402
 from experiments.recommendation.metrics import evaluate  # noqa: E402
 from experiments.recommendation.offline_models import (  # noqa: E402
     load_split,
     test_actuals,
     build_content_similarity,
+    build_cf_engine,
 )
 
 CATALOG_ALS_MODEL_PATH = str(REPO_ROOT / "experiments" / "recommendation" / "catalog_als" / "model")
 RESULTS_DIR = REPO_ROOT / "experiments" / "recommendation" / "results"
 TOP_K = 10
 ALPHAS = [0.0, 0.25, 0.5, 0.75, 1.0]
-
-
-def build_cf_engine(train):
-    model = load_app_module("recommendation-service", "model", "recsvc_app")
-    engine = model.RecommendationEngine()
-    for row in train.itertuples(index=False):
-        engine.user_item[row.user_id][row.product_id] += row.weight
-        engine.item_users[row.product_id][row.user_id] += row.weight
-    return engine
 
 
 def minmax_normalize(scores):
