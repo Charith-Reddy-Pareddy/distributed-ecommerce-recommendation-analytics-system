@@ -7,12 +7,12 @@
 <meta name="description" content="A distributed recommendation and analytics platform (Kafka, Spark, HBase, Cassandra, Elasticsearch) with a real experimental evaluation of recommendation quality, streaming/batch serving latency, and fault tolerance.">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <meta property="og:title" content="Distributed E-Commerce Recommendation Analytics System">
-<meta property="og:description" content="Four research questions, five recommendation models compared head-to-head, and fault-tolerance and throughput experiments run against the live system, not simulated.">
+<meta property="og:description" content="Five research questions, five recommendation models compared head-to-head, and fault-tolerance and throughput experiments run against the live system, not simulated.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://charith-reddy-pareddy.github.io/distributed-ecommerce-recommendation-analytics-system/">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Distributed E-Commerce Recommendation Analytics System">
-<meta name="twitter:description" content="Four research questions, five recommendation models compared head-to-head, and fault-tolerance and throughput experiments run against the live system, not simulated.">
+<meta name="twitter:description" content="Five research questions, five recommendation models compared head-to-head, and fault-tolerance and throughput experiments run against the live system, not simulated.">
 <style>
   :root {
     color-scheme: light;
@@ -278,7 +278,7 @@
     <p class="lede">
       An event-driven e-commerce platform (Kafka, Spark, HBase, Cassandra, Elasticsearch)
       built to actually answer that question, not just implement the stack &mdash;
-      four research questions, five recommendation models compared head-to-head,
+      five research questions, five recommendation models compared head-to-head,
       and fault-tolerance and throughput experiments run against the live system,
       not simulated.
     </p>
@@ -319,6 +319,11 @@
         <div class="rq-id">RQ4</div>
         <p>Can workload-aware database optimization reduce serving latency without excessive write/indexing overhead?</p>
         <p class="answer">The autonomous Postgres indexer cut p95 read latency 45% (6.1ms &rarr; 3.4ms) for negligible measured write overhead.</p>
+      </div>
+      <div class="rq-card">
+        <div class="rq-id">RQ5</div>
+        <p>Does the model comparison generalize to a different Amazon product category, or is it specific to this project's own catalog mix?</p>
+        <p class="answer">Re-run on a separately-fetched category (All_Beauty, 201 products): item-CF beats popularity beats content-based, same as before &mdash; and every model scores higher with no off-category noise diluting the signal.</p>
       </div>
     </div>
   </section>
@@ -402,6 +407,19 @@
       <div id="chart-models"></div>
       <details class="table-toggle"><summary>View as table</summary>
         <table class="data-table" id="table-models"></table>
+      </details>
+    </div>
+
+    <div class="chart-card">
+      <h3>Cross-category generalization &mdash; RQ5</h3>
+      <p class="chart-sub">Same production code, re-run against a separately-fetched Amazon category (All_Beauty, 201 products, none of the main catalog's four) with its own synthetic interaction log. The ranking holds, and every model scores higher with no off-category noise diluting the signal.</p>
+      <div class="legend">
+        <span class="key"><span class="swatch" style="background:var(--series-1)"></span>Main catalog</span>
+        <span class="key"><span class="swatch" style="background:var(--series-3)"></span>All_Beauty</span>
+      </div>
+      <div id="chart-cross-category"></div>
+      <details class="table-toggle"><summary>View as table</summary>
+        <table class="data-table" id="table-cross-category"></table>
       </details>
     </div>
 
@@ -616,6 +634,12 @@
     { alpha: 1.0, precision: 0.1191 }
   ];
 
+  var CROSS_CATEGORY = [
+    { name: "Popularity", main: 0.1899, allBeauty: 0.2905 },
+    { name: "Content-based", main: 0.0277, allBeauty: 0.0303 },
+    { name: "Item-CF", main: 0.3266, allBeauty: 0.4269 }
+  ];
+
   var THROUGHPUT = [
     { target: 100, achieved: 70.8 },
     { target: 250, achieved: 162.4 },
@@ -674,6 +698,58 @@
     var html = "<tr><th>Model</th><th class='num'>Precision@10</th><th class='num'>NDCG@10</th></tr>";
     MODELS.forEach(function (m) {
       html += "<tr><td>" + m.name + "</td><td class='num'>" + m.precision.toFixed(4) + "</td><td class='num'>" + m.ndcg.toFixed(4) + "</td></tr>";
+    });
+    table.innerHTML = html;
+  }
+
+  // ---- grouped bar chart: cross-category generalization (RQ5) --------
+  function renderCrossCategoryChart() {
+    var W = 860, H = 260, padL = 40, padR = 10, padT = 10, padB = 34;
+    var plotW = W - padL - padR, plotH = H - padT - padB;
+    var groupW = plotW / CROSS_CATEGORY.length;
+    var barW = 26, gap = 6;
+    var maxVal = 0.5;
+
+    var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, width: "100%", role: "img", "aria-label": "Bar chart comparing NDCG at 10 for popularity, content-based, and item-CF models across the main catalog and the All Beauty cross-category catalog" });
+
+    [0, 0.1, 0.2, 0.3, 0.4, 0.5].forEach(function (v) {
+      var y = padT + plotH - (v / maxVal) * plotH;
+      svg.appendChild(svgEl("line", { x1: padL, x2: W - padR, y1: y, y2: y, class: "gridline" }));
+      var t = svgEl("text", { x: padL - 8, y: y + 3, class: "axis-label", "text-anchor": "end" });
+      t.textContent = v.toFixed(1);
+      svg.appendChild(t);
+    });
+    svg.appendChild(svgEl("line", { x1: padL, x2: W - padR, y1: padT + plotH, y2: padT + plotH, class: "baseline" }));
+
+    CROSS_CATEGORY.forEach(function (m, i) {
+      var gx = padL + i * groupW + groupW / 2;
+      [["main", "var(--series-1)", "Main catalog"], ["allBeauty", "var(--series-3)", "All_Beauty"]].forEach(function (trip, j) {
+        var key = trip[0], color = trip[1], label = trip[2];
+        var val = m[key];
+        var h = (val / maxVal) * plotH;
+        var x = gx - barW - gap / 2 + j * (barW + gap);
+        var y = padT + plotH - h;
+        var rect = svgEl("rect", {
+          class: "bar-rect", x: x, y: y, width: barW, height: Math.max(h, 1),
+          rx: 4, ry: 4, fill: color
+        });
+        rect.addEventListener("mousemove", function (evt) {
+          showTooltip(evt, "<strong>" + m.name + "</strong><br>" + label + " NDCG@10: " + val.toFixed(4));
+        });
+        rect.addEventListener("mouseleave", hideTooltip);
+        svg.appendChild(rect);
+      });
+      var label = svgEl("text", { x: gx, y: padT + plotH + 18, class: "axis-label", "text-anchor": "middle" });
+      label.textContent = m.name;
+      svg.appendChild(label);
+    });
+
+    document.getElementById("chart-cross-category").appendChild(svg);
+
+    var table = document.getElementById("table-cross-category");
+    var html = "<tr><th>Model</th><th class='num'>Main catalog NDCG@10</th><th class='num'>All_Beauty NDCG@10</th></tr>";
+    CROSS_CATEGORY.forEach(function (m) {
+      html += "<tr><td>" + m.name + "</td><td class='num'>" + m.main.toFixed(4) + "</td><td class='num'>" + m.allBeauty.toFixed(4) + "</td></tr>";
     });
     table.innerHTML = html;
   }
@@ -787,6 +863,7 @@
   }
 
   renderModelChart();
+  renderCrossCategoryChart();
   renderHybridChart();
   renderThroughputChart();
 })();
