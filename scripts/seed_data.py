@@ -2,8 +2,11 @@
 users, and simulated interaction events so the recommendation,
 search, and analytics endpoints have something to work with.
 
-Product data comes from data/amazon_products.json, 300 real Amazon
-products extracted via scripts/fetch_amazon_products.py.
+Product data comes from data/amazon_products.json -- real Amazon
+products selected by real review density (see
+scripts/build_catalog_from_reviews.py and
+experiments/recommendation/REVIEWS_DATA.md for why), not an arbitrary
+sample.
 
 Usage (with all services already up via `docker compose up`):
 
@@ -86,7 +89,8 @@ def seed_users() -> list[int]:
     return ids
 
 
-def simulate_events(user_ids: list[int], product_ids: list[int], count: int = 300) -> None:
+def simulate_events(user_ids: list[int], product_ids: list[int], count: int | None = None) -> None:
+    count = count if count is not None else len(product_ids)
     event_types = ["view"] * 6 + ["add_to_cart"] * 3 + ["purchase"] * 1
     for _ in range(count):
         payload = {
