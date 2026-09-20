@@ -67,16 +67,16 @@ def cf_recommendations(engine, test_users, k=TOP_K):
     return recs, latency
 
 
-def load_catalog_texts():
-    products = json.loads(CATALOG_PATH.read_text())
+def load_catalog_texts(catalog_path=CATALOG_PATH):
+    products = json.loads(catalog_path.read_text())
     return {
         i: " ".join([p.get("category", ""), p.get("brand", ""), p.get("description", "")])
         for i, p in enumerate(products, start=1)
     }
 
 
-def build_content_similarity():
-    texts = load_catalog_texts()
+def build_content_similarity(catalog_path=CATALOG_PATH):
+    texts = load_catalog_texts(catalog_path)
     product_ids = sorted(texts)
     corpus = [texts[pid] for pid in product_ids]
     vectorizer = TfidfVectorizer(stop_words="english", max_features=2000)

@@ -43,7 +43,7 @@ SESSIONS_PER_USER_MEAN = 6
 ITEMS_PER_SESSION_RANGE = (1, 6)
 
 
-def load_catalog(path):
+def load_catalog(path=CATALOG_PATH):
     products = json.loads(path.read_text())
     product_ids = list(range(1, len(products) + 1))
     categories = {}
@@ -58,9 +58,9 @@ def zipf_weights(n):
     return weights / weights.sum()
 
 
-def generate_events(n_users, weeks, seed):
+def generate_events(n_users, weeks, seed, catalog_path=CATALOG_PATH):
     rng = np.random.default_rng(seed)
-    product_ids, categories = load_catalog(CATALOG_PATH)
+    product_ids, categories = load_catalog(catalog_path)
     category_names = list(categories.keys())
     category_weights = {
         name: zipf_weights(len(ids)) for name, ids in categories.items()
