@@ -85,41 +85,23 @@ docker compose down -v     # stop containers and wipe volumes
 
 ## Recommendation experiments
 
-The offline evaluation harness in `experiments/recommendation/` (popularity,
-item-CF, content-based, and catalog-ALS) doesn't need Docker at all -- ALS
-trains in local-mode PySpark instead of the Docker Spark+HDFS cluster.
-Set up a project-local virtualenv once:
+This project's only recommendation-quality study is the RetailRocket
+ALS job above -- it needs the Docker Spark+HDFS stack, see the
+RetailRocket steps above. What's left in `experiments/recommendation/`
+after removing the synthetic catalog-native pipeline (see
+[experiments/recommendation/README.md](../experiments/recommendation/README.md)
+for why) is dataset-agnostic tooling that doesn't need Docker:
 
 ```bash
 python3 -m venv .venv
 ./.venv/bin/pip install -r tests/requirements.txt -r experiments/requirements.txt
+./.venv/bin/python experiments/recommendation/scalability_benchmark.py  # CF cache latency vs. catalog size
 ```
 
-Then generate the synthetic interaction log, split it, and evaluate:
-
-```bash
-./.venv/bin/python scripts/generate_interactions.py
-./.venv/bin/python experiments/recommendation/split_interactions.py
-./.venv/bin/python experiments/recommendation/offline_models.py       # popularity, item-CF, content-based
-./.venv/bin/python experiments/recommendation/catalog_als/train.py    # catalog-native ALS
-./.venv/bin/python experiments/recommendation/hybrid.py               # CF+ALS / CF+content alpha sweeps
-./.venv/bin/python experiments/recommendation/bootstrap_ci.py         # bootstrap CIs on the above
-./.venv/bin/python experiments/recommendation/multi_seed.py           # 5-seed rerun, mean +/- std
-```
-
-`multi_seed.py` regenerates its own interaction log and train/test
-split in memory at each of 5 seeds -- it never writes to
-`data/interactions*.parquet` or `catalog_als/model/`, so it's safe to
-run without disturbing the canonical seed=42 files the other commands
-above (and the live hybrid pipeline) depend on. Expect it to take
-several minutes -- it retrains ALS 5 times.
-
-Results land in `experiments/recommendation/results/<name>.jsonl`, one
-JSON record per model (or alpha, or bootstrap CI, or multi-seed
-summary) per run. The existing RetailRocket ALS job
-(`jobs/als-training/`) is unrelated to this and
-still needs the Docker Spark+HDFS stack -- see the RetailRocket steps
-above.
+`metrics.py` and `bootstrap.py` are pure functions with their own unit
+tests (`tests/test_metrics.py`, `tests/test_bootstrap.py`); nothing in
+this repo currently calls them from a script, they're kept as
+reusable, tested building blocks for future evaluation work.
 
 ## Monitoring: Prometheus + Grafana
 
@@ -154,29 +136,22 @@ pytest
 ```
 
 CI (`.github/workflows/ci.yml`) runs `compileall` and this suite on
-every push and pull request. **88 unit tests** as of this writing.
+every push and pull request. **114 unit tests** as of this writing.
 
 `tests/integration/` covers the opposite: Kafka event-flow (does a
 posted event really reach a downstream consumer's live state), DB
 round-trips (Postgres, MongoDB, Elasticsearch), a full recommendation
-pipeline end-to-end, the live hybrid CF+ALS pipeline specifically, and
-API contracts (validation errors, 404s, response shapes) -- all
-against the live stack, so it's excluded from the default `pytest` run
-(`pytest.ini`'s `--ignore=tests/integration`) and CI. Run explicitly
-once `docker compose up` is running:
+pipeline end-to-end, and API contracts (validation errors, 404s,
+response shapes) -- all against the live stack, so it's excluded from
+the default `pytest` run (`pytest.ini`'s `--ignore=tests/integration`)
+and CI. Run explicitly once `docker compose up` is running:
 
 ```bash
 pip install -r tests/integration/requirements.txt
 pytest tests/integration
 ```
 
-`test_hybrid_live_pipeline.py` additionally needs the catalog-native
-ALS table loaded first -- see
-[Recommendation experiments](#recommendation-experiments) below and
-[Serving layer: HBase](ARCHITECTURE.md#serving-layer-hbase) for the
-full load command; it skips itself (not a failure) if that hasn't run.
-
-**14 integration tests** as of this writing.
+**13 integration tests** as of this writing.
 
 ## Project layout
 

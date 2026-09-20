@@ -1,50 +1,44 @@
-# Recommendation experiments (RQ1-RQ3)
+# Recommendation experiments
 
-No Docker needed -- everything here runs locally against
-`data/interactions_train.parquet` / `data/interactions_test.parquet`
-(built by `split_interactions.py` from `generate_interactions.py`'s
-synthetic, catalog-native interaction log, sharing the real 300-product
-catalog's id space). See [docs/RESEARCH_REPORT.md](../../docs/RESEARCH_REPORT.md)
-for full methodology, results, and formal algorithm definitions.
+This directory used to hold a full model-comparison suite (popularity,
+item-CF, content-based, catalog-native ALS, NeuMF, a CF+ALS hybrid
+blend, and a cross-category generalization check) trained and
+evaluated on a synthetic interaction log generated over this project's
+real product catalog. That log was fabricated -- Zipfian-skewed
+popularity and a scripted view→cart→purchase funnel, not real user
+behavior -- so however clearly it was labeled synthetic, treating
+recommendation-quality numbers computed on it as research findings
+wasn't an honest trade. That pipeline has been removed; see git
+history if you need the code.
 
-Run in this order for a from-scratch reproduction:
+The only recommendation-quality study left in this project is the
+real one: `jobs/als-training/` trains Spark MLlib ALS on the
+[RetailRocket](https://www.kaggle.com/datasets/retailrocket/ecommerce-dataset)
+clickstream dataset (~2.75M real events, ~1.4M users). Its item ids
+are a disjoint space from this project's own demo catalog, so its
+results are a standalone study, not something the live services can
+serve enriched. Full methodology and results are in
+[docs/RESEARCH_REPORT.md](../../docs/RESEARCH_REPORT.md).
 
-```bash
-python scripts/generate_interactions.py     # writes data/interactions.parquet
-python experiments/recommendation/split_interactions.py
+What's left here is the dataset-agnostic tooling that study depends on
+(or that is dataset-agnostic and worth keeping regardless):
 
-python experiments/recommendation/offline_models.py       # popularity, item-CF, content-based
-python experiments/recommendation/catalog_als/train.py    # Spark MLlib ALS (local-mode PySpark)
-python experiments/recommendation/neural_cf/train.py      # NeuMF (PyTorch, CPU, ~1 min)
-python experiments/recommendation/hybrid.py                # CF+ALS / CF+content blends
-
-python experiments/recommendation/temporal_eval.py         # RQ3: temporal split validity check
-python experiments/recommendation/scalability_benchmark.py # CF neighbor-cache scaling
-python experiments/recommendation/ablation_weights.py
-python experiments/recommendation/ablation_als_hyperparams.py
-python experiments/recommendation/ablation_cf_neighbors.py
-python experiments/recommendation/bootstrap_ci.py           # significance CIs on the model comparison
-```
-
-Every script appends its result(s) to `results/*.jsonl` via
-`experiments/common.py`'s `record_result()` -- nothing is overwritten,
-so re-running a script adds another timestamped record rather than
-destroying the last run's.
-
-- `catalog_als/` -- ALS trained on the catalog-native log, sharing the
-  product catalog's id space (unlike the separate RetailRocket model
-  in `jobs/als-training/`, which stays in its own id space as a larger
-  sparsity/weighting study).
-- `cross_category/` -- RQ5: does the RQ2 model comparison generalize to
-  a different Amazon category, or is it specific to this project's own
-  4-category catalog mix? Own catalog, own synthetic interaction log,
-  kept separate for the same reason `catalog_als/` is kept separate
-  from `jobs/als-training/`.
-- `neural_cf/` -- NeuMF (He et al., WWW 2017), a PyTorch GMF+MLP fusion
-  model trained with implicit-feedback negative sampling -- the only
-  actual neural network in this project.
-- `offline_models.py` -- popularity, item-CF (the real production
-  `RecommendationEngine`), and content-based (TF-IDF).
-- `hybrid.py` -- min-max normalized, alpha-weighted blends (CF+ALS,
-  CF+content), swept over alpha.
-- `results/` -- one `.jsonl` per experiment, append-only.
+- `metrics.py` -- precision/recall/MAP/NDCG@K. Pure functions over a
+  ranked recommendation list and a held-out actual set; used to score
+  the RetailRocket ALS model.
+- `bootstrap.py` -- percentile-method bootstrap confidence intervals
+  (`bootstrap_ci`, `paired_bootstrap_diff`) over per-user metric
+  values. Not currently called by any script in this repo, kept
+  because it's pure/reusable and has its own test coverage
+  (`tests/test_bootstrap.py`).
+- `scalability_benchmark.py` -- measures the *real* production
+  `RecommendationEngine`'s
+  (`services/recommendation-service/app/model.py`) similar-items
+  latency as catalog size grows. Uses synthetic *traffic*, generated
+  directly into the engine's dicts for speed rather than through
+  Kafka/event-service, but that's a load-generation detail, not a
+  recommendation-quality claim -- see the module's own docstring.
+  Run with `python experiments/recommendation/scalability_benchmark.py
+  [n_items ...]`.
+- `results/` -- one `.jsonl` per experiment, append-only, via
+  `experiments/common.py`'s `record_result()`.

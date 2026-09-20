@@ -129,40 +129,25 @@ curl http://localhost:8004/recommendations/precomputed/54
 
 Measured point-lookup latency over the REST layer: **~10ms average**.
 
-This table's source is which ALS job last loaded it -- `hbase-loader`
-is source-agnostic (`RECS_PATH`/`USER_ID_FIELD`/`ITEM_ID_FIELD`/
-`RECREATE_TABLE` env vars) so the same code loads either job's output:
+`hbase-loader` is source-agnostic (`RECS_PATH`/`USER_ID_FIELD`/
+`ITEM_ID_FIELD`/`RECREATE_TABLE` env vars) -- it will faithfully load
+whatever ALS job's output it's pointed at. In this project that's only
+ever `jobs/als-training/` (RetailRocket). Its item ids are their own
+space, disjoint from the demo catalog `product-service` and
+`recommendation-service` use, so `/recommendations/precomputed/{visitor_id}`
+can never enrich those ids into real product details -- it always
+falls back to raw RetailRocket ids. That's an honest consequence of
+serving real interaction data against a real, different catalog, not a
+bug to route around.
 
-- **RetailRocket** (`jobs/als-training/`): its own item ids, a
-  different space from the demo catalog -- kept as a separate,
-  clearly-labeled offline sparsity study (see
-  [ALS recommendation model](#als-recommendation-model-spark-mllib)),
-  never loaded for live serving.
-- **Catalog-native** (`experiments/recommendation/catalog_als/`): real
-  product-service ids, trained offline via local-mode PySpark (no
-  Docker), then bridged into HDFS with `upload_to_hdfs.py` (via
-  `docker cp` + `hdfs dfs -put` run inside the namenode container --
-  not WebHDFS from the host, which redirects writes to the datanode's
-  internal-only Docker hostname). This is what the live
-  `/recommendations/hybrid/{user_id}` endpoint (`hybrid.py`) actually
-  serves from:
-
-```bash
-python experiments/recommendation/catalog_als/train.py
-python experiments/recommendation/catalog_als/upload_to_hdfs.py
-docker compose --profile jobs run --rm \
-  -e RECS_PATH=/output/catalog-als-recommendations \
-  -e USER_ID_FIELD=user_id -e ITEM_ID_FIELD=product_id \
-  -e RECREATE_TABLE=true hbase-load-recommendations
-```
-
-Verified end-to-end, not just wired: a live interaction updates the CF
-component within seconds while the precomputed ALS component stays
-exactly static until the pipeline above is rerun -- see
-`tests/integration/test_hybrid_live_pipeline.py`, which creates two
-brand-new products (absent from the ALS training snapshot) and proves
-they surface through live CF while `/recommendations/precomputed/{id}`
-for the same user is byte-for-byte unchanged.
+A second ALS model used to exist, trained on an interaction log
+fabricated *over* the real product catalog specifically to make the
+ids line up -- which let a CF+ALS hybrid endpoint resolve to real
+product names, and let a hybrid blend be evaluated end-to-end. That
+model, its training/upload scripts, and the hybrid endpoint have all
+been removed: simulating a model's training data to get its output ids
+to match a catalog isn't a trade worth making just to make a demo
+resolve to real product names. See git history if you need that code.
 
 ## Time-series analytics: Cassandra
 
@@ -356,17 +341,19 @@ single-node-per-store local deployment can't actually produce.
 
 ## Trade-offs and lessons learned
 
-- **Two disconnected id spaces -- fixed for modeling and for live
-  serving.** ALS originally only trained on RetailRocket's own item
-  ids, a different space from the demo catalog. A second, catalog-native
-  ALS model trained on a synthetic-but-structured interaction log over
-  the real catalog (`experiments/recommendation/`) fixed this offline
-  first -- that's what made the hybrid CF+ALS blend below possible,
-  measurably better than either model alone. `hbase-loader` is now
-  source-agnostic and the live pipeline is fully wired and verified
-  end-to-end (see [Serving layer: HBase](#serving-layer-hbase)) --
-  the live hybrid endpoint genuinely blends live CF with precomputed
-  catalog-native ALS, not RetailRocket's disjoint id space.
+- **Two disconnected id spaces -- left that way, deliberately.** ALS
+  trains on RetailRocket's own item ids, a different, disjoint space
+  from the demo catalog `product-service` and `recommendation-service`
+  use -- real interaction data about someone else's real catalog, not
+  this one. A second ALS model used to exist, trained on an
+  interaction log fabricated *over* the real catalog specifically to
+  make the ids line up, which let a CF+ALS hybrid endpoint resolve to
+  real product names. That model and its hybrid endpoint have been
+  removed: making a model's training data line up with a catalog it
+  was never trained on isn't a trade worth making just so a demo
+  resolves ids to names. `hbase-loader` is still source-agnostic
+  (see [Serving layer: HBase](#serving-layer-hbase)); it just now only
+  ever has one real source to load.
 
 - **Spark's `update` output mode was the trickiest bug to get
   right.** The Cassandra writer upserts each window's running total
@@ -384,13 +371,6 @@ single-node-per-store local deployment can't actually produce.
   work.** Every JVM-heavy store needed its own memory-limit tuning
   pass to stop them competing for the same 12GB -- a cost of the
   single-host demo, not of the architecture itself.
-
-- **The in-memory CF model and the batch ALS model do blend now.** A
-  hybrid `Score(i) = α·ALS(i) + (1-α)·CF(i)` (`services/
-  recommendation-service/app/hybrid.py`) replaced the two competing,
-  unrelated endpoints -- α=0.25, the empirically best value from
-  `experiments/recommendation/hybrid.py`'s offline sweep, is now the
-  live `/recommendations/hybrid/{user_id}` endpoint's default.
 
 - **A background thread with no logging is a liability.**
   `recommendation-service`'s Kafka consumer ran with zero logging from

@@ -13,33 +13,40 @@ an analytics aggregator, a batch ML pipeline, and a stream processor --
 each read that same stream and build their own view of the data, with
 no shared database between them.
 
-## Research questions
+## Research question
 
-Underneath the systems work, this project is really investigating five
-questions:
+Underneath the systems work, this project investigates one question:
 
-- **RQ1** — How does event-weighted implicit feedback (view/cart/
-  purchase weights) affect recommendation quality, compared to
-  alternative weighting schemes?
-- **RQ2** — How does a real-time item-item recommender compare against
-  batch ALS on Precision@K, Recall@K, MAP@K, NDCG@K, latency, and
-  update freshness?
-- **RQ3** — What's the trade-off between recommendation freshness and
-  serving latency, given that this architecture supports both a
-  streaming and a batch path to the same problem?
-- **RQ4** — Can workload-aware database optimization
+- **RQ1** — Can workload-aware database optimization
   (`serving-optimizer`) reduce serving latency without excessive
   write/indexing overhead?
-- **RQ5** — Does RQ2's model comparison generalize to a different
-  Amazon product category, or is it specific to this project's own
-  4-category catalog mix?
+
+Two earlier research questions asked whether a real-time item-item
+recommender compares favorably to batch ALS, and whether a CF+ALS
+hybrid blend beats either alone. Answering those required training
+and serving CF, ALS, and a catalog of products against a *shared* item
+id space -- and the only way this project had one was a synthetic
+interaction log fabricated over the real product catalog, since the
+one real interaction dataset here (RetailRocket) has its own disjoint
+item ids and no product text. Recommendation-quality numbers computed
+on fabricated interactions aren't a finding, however clearly the log
+was labeled synthetic, so that comparison (and the hybrid blend, and a
+cross-category generalization check built on the same log) has been
+removed rather than kept around for a number to report. What's left as
+a recommendation-quality result is the real one: **RetailRocket ALS**
+(`jobs/als-training/`), trained and evaluated entirely on real
+clickstream data, Precision@10 = 0.0055 -- low, honestly, because
+RetailRocket is genuinely sparse (median 1 interaction per user across
+~1.4M users), not because of a bug. See
+[Data sources](#data-sources) for why its ids can't be served through
+this project's own catalog.
 
 **Main contributions**: an event-driven distributed recommendation
-pipeline; a streaming and batch recommendation model sharing one
-catalog id space for the first time, enabling a real hybrid blend;
-workload-aware database optimization as a measured experiment rather
-than a fixed config; and an experimental evaluation of recommendation
-quality and serving performance under this architecture.
+pipeline; workload-aware database optimization as a measured
+experiment rather than a fixed config; a real-data ALS study at
+production-realistic sparsity; and a measured scaling limit (and fix)
+for the real-time collaborative-filtering engine as catalog size
+grows.
 
 Full methodology and results are in
 [docs/RESEARCH_REPORT.md](docs/RESEARCH_REPORT.md); raw data is in
@@ -51,64 +58,21 @@ All numbers below are measured, not estimated -- see
 [docs/RESEARCH_REPORT.md](docs/RESEARCH_REPORT.md) for full tables and
 methodology.
 
-- **RQ1 — weighting matters, but not much.** Across four weighting
-  schemes (uniform through steep), Precision@10 moves at most ~10%
-  relative for either model. Item-CF actually does *better* with
-  flatter weights; catalog-ALS is roughly flat, peaking near the
-  production 1/3/5 scheme.
-- **RQ2 — CF and ALS are close on quality, ALS wins on latency.**
-  Item-CF (Precision@10 0.118, NDCG@10 0.327) and catalog-ALS (0.119,
-  0.315) are near-tied; CF ranks slightly better, ALS serves **18-29x
-  faster** (5.6-9.0ms vs. 163ms per request, two runs -- see
-  [docs/RESEARCH_REPORT.md](docs/RESEARCH_REPORT.md#rq2-model-comparison-random-split-k10-1866-test-users))
-  since it's a precomputed
-  lookup. Both comfortably beat popularity (0.087) and content-based
-  alone (0.014). **A fifth model, NeuMF** (`experiments/recommendation/neural_cf/`
-  -- the only actual neural network in this project, PyTorch
-  GMF+MLP), lands between popularity and CF/ALS (Precision@10 0.109) --
-  expected on this dataset's size, not a bug; see
-  [docs/RESEARCH_REPORT.md](docs/RESEARCH_REPORT.md#algorithm-definitions).
-- **RQ3 — a modest CF+ALS blend beats either model alone**, peaking
-  around α=0.25-0.5 on precision, recall, and NDCG. The freshness gap
-  behind that trade-off is real: CF folds in a new event in
-  **~0.0005ms**; a full ALS retrain on this dataset takes **~4.5s**
-  (and would only grow with more data). A temporal (realistic)
-  train/test split also drops both models' precision ~40% versus the
-  random 80/20 split used elsewhere -- the random split was
-  optimistic.
-- **The CF+ALS blend's edge over pure CF is real, not noise.**
-  Bootstrapping (1,000 resamples) the α=0.25 hybrid against pure CF
-  over the same held-out users gives Precision@10 **+0.0095**, 95% CI
-  **[0.0074, 0.0117]** -- comfortably clear of zero, and the same holds
-  for recall, MAP, and NDCG. Not every gap this project reports would
-  survive this check; this one does.
-- **It also holds up on a different simulated population.**
-  Regenerating the interaction log from scratch at 5 seeds and
-  rerunning the full model comparison and hybrid sweep on each gives
-  the same ranking and the same best α every time: item-CF and
-  catalog-ALS both land at Precision@10 **≈0.119**, and α=0.25 stays
-  the best hybrid mix at **0.1306 ± 0.0037** vs. pure CF's
-  **0.1293 ± 0.0035** -- a small, consistent edge, not one seed's luck.
-- **RQ4 — the optimizer earns its keep, at a real cost.**
+- **RQ1 — the optimizer earns its keep, at a real cost.**
   `serving-optimizer`'s Postgres indexer cut p95 read latency
   **45%** (6.1ms → 3.4ms) for negligible write overhead. Its
   Elasticsearch tuner sped up a write burst (0.71s → 0.25s) but made
   individual documents slower to become searchable (585ms → 1040ms)
   -- confirmed, not just documented. Cassandra hot/cold classification
   was verified correct against real, controlled traffic.
-- **RQ5 — the model comparison generalizes to a different category.**
-  Re-ran the exact same evaluation code against a genuinely different,
-  separately-fetched Amazon category (All_Beauty, 201 products, none of
-  the main catalog's four categories) with its own synthetic
-  interaction log. Item-CF beats popularity, which beats content-based,
-  by a wide margin on both catalogs -- the ranking isn't an artifact of
-  the main catalog's particular category mix. Every model actually
-  scores *higher* on the single-category catalog (NDCG@10 0.43 vs. 0.33
-  for item-CF), plausibly because a single-category catalog has no
-  "off-category exploration" diluting the signal. See
-  [experiments/recommendation/cross_category/](experiments/recommendation/cross_category/)
-  for the full writeup, including two real bugs this surfaced in code
-  every other recommendation experiment also depends on.
+- **RetailRocket ALS: real interaction data, honestly sparse.**
+  Precision@10 = **0.0055** on ~2.75M real clickstream events across
+  ~1.4M users -- low mainly because the dataset itself is sparse
+  (median 1 interaction per user), not because of a bug. A production
+  system at this sparsity would want richer item features or a
+  hybrid content + collaborative approach. See
+  [jobs/als-training/](jobs/als-training/) and
+  [docs/RESEARCH_REPORT.md](docs/RESEARCH_REPORT.md).
 - **Two more real experiments, run against the live stack:**
   measured Kafka throughput saturates around 200-400 events/sec with
   the full downstream consumer pipeline attached (well under an
@@ -127,7 +91,7 @@ methodology.
   precompute itself isn't free (1s → 142s → 358s at those same
   scales), an honest limit on this approach, not hidden -- see
   [Key challenges](#key-challenges).
-- **88 unit tests + 14 integration tests**, all passing, and several
+- **114 unit tests + 13 integration tests**, all passing, and several
   real bugs found and fixed while building this: a corrupted
   multiprocessing state after repeated force-kills, a Kafka consumer
   that goes silently idle with nothing in the logs to say so, and
@@ -233,13 +197,12 @@ autonomous `serving-optimizer` -- is in
   Fixed by logging thread startup, every message error, and periodic
   replay progress -- a crash you can see beats a hang you can't.
 - **Experiments can lie to themselves in subtle ways.** Building the
-  hybrid model, ablations, and fault-tolerance suite surfaced real
-  bugs in the experiments *measuring* the system, not just the system
-  itself: a hybrid blend that let already-seen items back into the
-  ranking, a decision-log endpoint's page-size limit producing false
-  negatives under heavy background traffic, and `docker compose
-  start` silently no-op'ing on an already-running container. Each one
-  looked like a system failure until traced back to the test.
+  fault-tolerance suite surfaced real bugs in the experiments
+  *measuring* the system, not just the system itself: a decision-log
+  endpoint's page-size limit producing false negatives under heavy
+  background traffic, and `docker compose start` silently no-op'ing on
+  an already-running container. Each one looked like a system failure
+  until traced back to the test.
 - **The fix for one bottleneck can become the next one.** Precomputing
   item-item neighbors instead of computing them live fixed the O(n)
   per-request cost -- but the precompute itself is O(n²)-ish, and its
@@ -259,23 +222,20 @@ autonomous `serving-optimizer` -- is in
   different consumers -- an in-memory model, SQL rollups, a raw
   archive, and a streaming job -- coexist without stepping on each
   other.
-- **A low benchmark number can be the dataset, not a bug.** ALS's
-  Precision@10 (0.0055) is low mainly because RetailRocket is
-  genuinely sparse -- median 1 interaction per user across ~1.4M
-  users. A production system would want richer item features or a
-  hybrid content + collaborative approach.
-- **The id-mismatch problem got fixed for real, live serving
-  included.** The original ALS model trained on RetailRocket's own
-  item ids, a different space from the demo catalog -- so precomputed
-  recommendations couldn't be enriched through `product-service`. A
-  second ALS model, trained on a synthetic-but-structured interaction
-  log over the *real* catalog, put CF, ALS, and the catalog in one id
-  space, making a genuine hybrid blend (RQ3) possible to evaluate --
-  and `hbase-loader` is now source-agnostic, so the live
-  `/recommendations/hybrid/{user_id}` endpoint genuinely serves it:
-  verified end-to-end (a live interaction updates CF within seconds
-  while the precomputed ALS side stays exactly static until the batch
-  pipeline reruns), not just offline. See
+- **The id-mismatch problem is real and stays unfixed, on purpose.**
+  RetailRocket's item ids are a different, disjoint space from this
+  project's own demo catalog -- real clickstream events on someone
+  else's real catalog, not this one. `hbase-loader` is source-agnostic
+  (`RECS_PATH`/`USER_ID_FIELD`/`ITEM_ID_FIELD` env vars) and will
+  faithfully load whatever ALS produces into HBase, but
+  `/recommendations/precomputed/{visitor_id}` can never enrich those
+  ids through `product-service` -- it always falls back to raw
+  RetailRocket ids. A second ALS model used to exist, trained on a
+  synthetic interaction log generated *over* the real catalog
+  specifically to make the ids line up and enable a hybrid CF+ALS
+  blend -- but simulating a model's inputs to get its outputs to
+  resolve to real product names isn't a trade worth making just for
+  that. See
   [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#serving-layer-hbase).
 
 More trade-offs and lessons learned are in
@@ -299,38 +259,39 @@ Kafka topic:                     3 partitions, 1 broker, unkeyed (round-robin)
 Spark trigger interval:          30s for both streaming queries
 Anomaly detection:                one controlled 60-event/10s burst, flagged at z_score=32.17
 RetailRocket ALS Precision@10:   0.0055 (~2.75M events, ~1.4M users, sparse)
-Catalog-ALS Precision@10:        0.119 (synthetic catalog-native interactions)
 HBase point lookup:              ~10ms average over the REST layer
 Product catalog:                 300 Amazon products
 Optimizer Postgres p95:          6.14ms -> 3.38ms after auto-indexing (-45%)
 hdfs-sink crash recovery:        40/40 tracked events recovered, zero loss
-Test suite:                       88 unit tests + 14 integration tests, all passing
+Test suite:                       114 unit tests + 13 integration tests, all passing
 CF similar-items (300 items):     live p95 8ms -> cached p95 0.002ms (5,133x)
 CF similar-items (5,000 items):   live p95 90ms -> cached p95 0.054ms (1,648x)
 ```
 
 ## Data sources
 
-Two real, public datasets, plus one synthetic one generated for this
-project:
+Two real, public datasets. No interaction data in this project is
+synthetic.
 
 - **[McAuley-Lab/Amazon-Reviews-2023](https://amazon-reviews-2023.github.io/)**
   — 300 real Amazon products (titles, brands, prices, images, ratings,
   ASINs) pulled via `scripts/fetch_amazon_products.py` and stored in
-  MongoDB as the demo product catalog.
+  MongoDB as the demo product catalog. All live traffic (the real-time
+  item-item CF model, `recommendation-service`'s `/recommendations/*`
+  endpoints, the dashboard demo) is driven by real interactions with
+  this catalog, via `scripts/seed_data.py` or the API directly -- not
+  fabricated.
 - **[RetailRocket e-commerce dataset](https://www.kaggle.com/datasets/retailrocket/ecommerce-dataset)**
-  (Kaggle) — ~2.75M real clickstream events over 4.5 months. Trains a
-  separate, offline ALS model (`jobs/als-training/`) used only as a
-  large-scale sparsity/weighting study -- its own item ids never
-  served live traffic.
-- **Synthetic catalog-native interactions**
-  (`scripts/generate_interactions.py`) — Zipfian-skewed popularity,
-  per-user category preferences, and a view→cart→purchase funnel
-  generated over the *real* 300-product catalog, clearly documented as
-  synthetic rather than passed off as real behavior. This is what the
-  recommendation experiments in `experiments/recommendation/` actually
-  train and evaluate on, since its item ids match the catalog
-  product-service and recommendation-service already use.
+  (Kaggle) — ~2.75M real clickstream events over 4.5 months, ~1.4M
+  users, ~235K items. Trains a separate, offline ALS model
+  (`jobs/als-training/`) as this project's recommendation-quality
+  study. Its item ids are their own space, disjoint from the demo
+  catalog above -- a real dataset about someone else's real catalog,
+  not this project's -- so its precomputed recommendations can be
+  loaded into HBase and served, but never enriched into product
+  details through `product-service`. See
+  [Technical considerations](#technical-considerations--takeaways) for
+  why that's left as-is rather than papered over.
 
 ## Running locally
 
@@ -384,10 +345,13 @@ same Kafka topic surfaced problems a single-service tutorial never
 would -- keeping the Cassandra writer correct under Spark's `update`
 mode, or noticing partway through that the ALS model and the
 in-memory CF model had no real relationship to each other. That
-noticing turned into the actual research questions above: once the
+noticing turned into the research question above: once the
 architecture existed, the more interesting question became whether
-any of it measurably helped. More in [Key challenges](#key-challenges)
-and [docs/RESEARCH_REPORT.md](docs/RESEARCH_REPORT.md).
+any of it measurably helped -- and, later, into recognizing that a
+model comparison propped up by fabricated interaction data wasn't
+actually answering that question, however it was labeled. More in
+[Key challenges](#key-challenges) and
+[docs/RESEARCH_REPORT.md](docs/RESEARCH_REPORT.md).
 
 ## AI assistance
 

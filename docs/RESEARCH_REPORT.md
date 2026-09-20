@@ -5,24 +5,41 @@ this stack -- see `experiments/*/results/*.jsonl` for the raw records
 each section draws from, and `experiments/*/README.md` for how to
 reproduce a run. Nothing here is estimated or extrapolated.
 
+An earlier version of this report also compared a real-time item-item
+recommender against a batch ALS model, evaluated a CF+ALS hybrid blend,
+and checked whether that comparison generalized to a different Amazon
+category. All three depended on training and serving ALS against the
+real product catalog's item ids -- and the only way this project had
+a shared id space was an interaction log fabricated (Zipfian-skewed
+popularity, a scripted view→cart→purchase funnel) over the real
+catalog, since the one real interaction dataset available here
+(RetailRocket) has its own disjoint ids and no product text.
+Recommendation-quality numbers computed on fabricated interactions
+aren't a finding, however clearly the log was labeled synthetic, so
+that comparison has been removed rather than kept for a number to
+report. See git history if you need that code or those results.
+
 ## Abstract
 
 This project investigates whether a distributed e-commerce platform's
-recommendation quality and serving performance can be measured, not
+serving performance and recommendation quality can be measured, not
 just built. Starting from a Lambda-style architecture (Kafka, Spark
 Structured Streaming, Spark MLlib ALS, HBase, Cassandra, Elasticsearch,
-Postgres, MongoDB), we compare a real-time item-item collaborative
-filter against a batch ALS model, blend the two, evaluate the blend
-under a realistic temporal split, run ablations on event weighting and
-model hyperparameters, and separately measure the effect of a
-workload-aware database optimizer and the system's behavior under
-container failure. The hybrid CF+ALS blend outperforms either model
-alone; a temporal evaluation split shows the standard random split
-overstates quality by roughly 40%; the optimizer's Postgres indexer
-cuts p95 read latency 45%; and the system's persistent-offset consumer
-recovers from a crash with zero event loss, while its stateless
-consumer's replay time and its search index's total loss on container
-replacement are both real, measured costs of those designs.
+Postgres, MongoDB), we measure the effect of a workload-aware database
+optimizer, train and evaluate an ALS collaborative filter on a real,
+public clickstream dataset, measure the real-time item-item
+recommender's own scaling limit as catalog size grows, and separately
+measure the system's behavior under container failure and sustained
+load. The optimizer's Postgres indexer cuts p95 read latency 45%; its
+Elasticsearch tuner trades slower time-to-searchable for faster burst
+throughput; ALS on real clickstream data lands at a low but honest
+Precision@10 (0.0055) explained by the dataset's genuine sparsity, not
+a bug; the real-time CF engine's live similarity lookup degrades
+roughly linearly with catalog size until replaced with a precomputed
+cache; and the system's persistent-offset consumer recovers from a
+crash with zero event loss, while its stateless consumer's replay time
+and its search index's total loss on container replacement are both
+real, measured costs of those designs.
 
 ## Problem
 
@@ -31,12 +48,15 @@ simultaneously feed a real-time recommender, rolling analytics, a
 batch-trained ML model, and a workload-aware serving layer. The
 architecture for doing this (Lambda-style: independent streaming and
 batch paths reading the same log) is well documented in the
-literature, but rarely evaluated: does the batch path actually add
-recommendation quality over the streaming path alone? Does blending
-them help, and by how much? What does "fresher" streaming data
-actually cost in latency versus a batch retrain? Does an autonomous
-database tuner's benefit outweigh its overhead? This report answers
-those questions for this system, not in the abstract.
+literature, but rarely evaluated: does an autonomous database tuner's
+benefit outweigh its overhead? What does implicit-feedback
+collaborative filtering actually look like on real, sparse clickstream
+data, rather than a curated benchmark? Does the real-time
+collaborative-filtering engine's naive similarity lookup actually
+scale as a catalog grows, and if not, what fixes it and at what cost?
+This report answers those questions for this system, not in the
+abstract -- and, as importantly, is explicit about which questions it
+no longer tries to answer, and why (see the note above).
 
 ## System architecture
 
@@ -46,30 +66,26 @@ write-up (services, data flow, the Mermaid diagram lives in the
 
 ## Recommendation algorithms
 
-Five models are compared, all sharing the real 300-product catalog's
-id space (see [Ablation studies](#ablation-studies) for why that
-matters):
+Two algorithms actually serve live traffic; a third is an offline
+study on a real, separate dataset:
 
-- **Popularity** -- sum of event weights per product, no
-  personalization.
 - **Item-CF** (`services/recommendation-service/app/model.py`) -- the
-  actual production `RecommendationEngine`: weighted cosine similarity
+  production `RecommendationEngine`: weighted cosine similarity
   between items' interaction vectors, in-memory, rebuilt by replaying
-  Kafka.
-- **Content-based** -- TF-IDF cosine similarity over each product's
-  category, brand, and description.
-- **Catalog-ALS** (`experiments/recommendation/catalog_als/`) --
-  Spark MLlib ALS (implicit feedback), trained on a synthetic,
-  catalog-native interaction log so its item ids match the other three
-  models, unlike the original RetailRocket-trained model.
-- **Neural CF / NeuMF** (`experiments/recommendation/neural_cf/`) --
-  the only trained neural network in this project: a PyTorch GMF+MLP
-  fusion model (He et al., WWW 2017), trained on the same catalog-native
-  interaction log as catalog-ALS with implicit-feedback negative
-  sampling. See [Algorithm definitions](#algorithm-definitions).
-- **Hybrid CF+ALS / CF+content** (`services/recommendation-service/app/hybrid.py`,
-  `experiments/recommendation/hybrid.py`) -- min-max normalized,
-  alpha-weighted blend of two models' scores.
+  Kafka. Serves `/recommendations/{user_id}` and
+  `/recommendations/similar/{product_id}` against this project's real
+  300-product catalog.
+- **Popularity** -- sum of event weights per product, no
+  personalization; the fallback for users with no interaction history
+  yet (`popular_items()`).
+- **ALS, implicit feedback** (`jobs/als-training/train_als.py`) --
+  Spark MLlib ALS, trained and evaluated entirely on the real
+  [RetailRocket](https://www.kaggle.com/datasets/retailrocket/ecommerce-dataset)
+  clickstream dataset. Its item ids are RetailRocket's own, a
+  different, disjoint space from the demo catalog above -- see
+  [RetailRocket ALS results](#retailrocket-als-real-interaction-data-at-production-sparsity)
+  and [docs/ARCHITECTURE.md](ARCHITECTURE.md#serving-layer-hbase) for
+  what that does and doesn't let this project serve live.
 
 ### Algorithm definitions
 
@@ -108,16 +124,9 @@ for the measured wall-clock numbers at three catalog sizes, which grow
 faster than the `n_items²` term alone once `avg_users_per_item` scales
 with traffic too.
 
-**Content-based.** TF-IDF cosine similarity over each product's
-category, brand, and description text, same cosine formula as above
-but over term-frequency vectors instead of interaction vectors --
-included as a weak, non-personalized-by-behavior baseline (RQ2:
-Precision@10 0.014, far below CF/ALS).
-
-**ALS, implicit feedback** (`experiments/recommendation/catalog_als/train.py`,
-`jobs/als-training/train_als.py`; Spark MLlib, Hu-Koren-Volinsky
-formulation). Raw event weight `r_ui` becomes a *confidence*, not a
-target rating:
+**ALS, implicit feedback** (`jobs/als-training/train_als.py`; Spark
+MLlib, Hu-Koren-Volinsky formulation). Raw event weight `r_ui` becomes
+a *confidence*, not a target rating:
 
 ```
 c_ui = 1 + α · r_ui          p_ui = 1 if r_ui > 0 else 0
@@ -129,72 +138,15 @@ solved by alternating least squares -- fix `V`, solve the now-linear
 system for every `U` row in closed form, then fix `U` and solve for
 `V`, repeat for `maxIter` rounds. This project's fixed hyperparameters:
 `rank=10` (latent factors), `maxIter=10`, `regParam (λ)=0.1`,
-`alpha (α)=1.0` -- see
-[Ablation studies](#als-hyperparameters-rank--regparam) for the sweep
-these were chosen from. `coldStartStrategy="drop"` excludes users/items
-with no training interactions from evaluation rather than emitting NaN
+`alpha (α)=1.0`. `coldStartStrategy="drop"` excludes users/items with
+no training interactions from evaluation rather than emitting NaN
 predictions for them.
 
 *Complexity.* One ALS iteration is `O(n_nonzero · rank²  +  (n_users +
 n_items) · rank³)` -- the first term from building each row's normal
 equations over its nonzero ratings, the second from solving each of
-those `rank × rank` linear systems. Trains offline in batch, not on the
-request path, which is exactly the freshness/latency trade-off RQ3
-measures (a full retrain: ~4.5s on this dataset; a live CF update:
-~0.0005ms).
-
-**Neural CF, NeuMF** (`experiments/recommendation/neural_cf/model.py`;
-He, Liao, Zhang, Nie, Hu, Chua, *Neural Collaborative Filtering*, WWW
-2017). Two embedding paths per (user, item) pair, fused before a final
-linear layer -- a learned generalization of the dot-product interaction
-ALS uses, plus a second path that can express interactions a dot
-product can't:
-
-```
-GMF(u, i) = W_gmf · ( e_u^gmf ⊙ e_i^gmf )                          # elementwise product, then linear
-MLP(u, i) = f_L( ... f_1( [e_u^mlp ; e_i^mlp] ) ... )               # concatenated, then L dense+ReLU layers
-ŷ(u, i)   = σ( W_out · [ GMF(u, i) ; MLP(u, i) ] )                  # fused, final linear layer, sigmoid
-```
-
-`e^gmf` and `e^mlp` are *separate* embedding tables per user/item (this
-project: 16-dim GMF, 16-dim MLP, MLP tower shape `32→16→8`) -- GMF and
-MLP are free to learn different latent representations of the same
-user/item, not forced to share one.
-
-Trained on implicit feedback with the same confidence framing as ALS
-above: an observed `(u, i)` pair is a positive example weighted
-`1 + α·r_ui` in the loss; `NEG_SAMPLES_PER_POSITIVE=4` items the user
-never interacted with are negative examples per positive, weighted 1.0
-(`α=1.0`, matching ALS's own default). Loss is binary cross-entropy on
-the fused logit, re-sampling negatives fresh every epoch so the model
-can't memorize one fixed negative set:
-
-```
-loss = -(1/N) Σ  w_ui · [ y_ui·log(ŷ_ui) + (1-y_ui)·log(1-ŷ_ui) ]
-```
-
-*Complexity.* One forward/backward pass over a batch of size `B` is
-`O(B · (d_gmf + d_mlp·H))`, `H` the MLP's largest hidden width --
-dominated by the MLP's dense layers, not the embedding lookups.
-Inference for one user against the full catalog is one batched forward
-pass, `O(n_items · (d_gmf + d_mlp·H))`, measured at **0.33ms/user** on
-this catalog (300 items) -- comparable to, and on a later measurement
-faster than, ALS's own precomputed-lookup latency (5.6-9.0ms, two runs
--- see [RQ2 results](#rq2-model-comparison-random-split-k10-1866-test-users))
-despite scoring the *entire* catalog live every call, with no
-precompute step at all.
-
-*Result.* Precision@10 0.109, Recall@10 0.343, MAP@10 0.196, NDCG@10
-0.292 -- between popularity and CF/ALS, not ahead of either (see
-[RQ2 results](#rq2-model-comparison-random-split-k10-1866-test-users)).
-Expected, not a bug: NeuMF's extra representational flexibility over a
-closed-form factorization needs more training data to pay off than
-this project's ~25K training pairs provides, and ALS's implicit-ALS
-objective is already a strong, well-matched inductive bias for exactly
-this kind of sparse implicit-feedback data. A larger interaction log
-(e.g. the RetailRocket dataset the RetailRocket-trained ALS job uses --
-different id space, not directly comparable here) is the standard
-setting where NeuMF-style models earn their extra capacity.
+those `rank × rank` linear systems. Trains offline in batch, not on
+the request path.
 
 **Anomaly detection, Welford's online algorithm**
 (`jobs/spark-streaming/session_and_anomaly.py`). Per-product running
@@ -229,9 +181,8 @@ algorithm, 2.5σ threshold). See
 ## Batch architecture
 
 Two batch paths: a MapReduce popularity job over the raw HDFS archive,
-and Spark MLlib ALS training (both the original RetailRocket job and
-the catalog-native one built for this report). See
-[docs/ARCHITECTURE.md](ARCHITECTURE.md#batch-layer-mapreduce).
+and Spark MLlib ALS training on RetailRocket (`jobs/als-training/`).
+See [docs/ARCHITECTURE.md](ARCHITECTURE.md#batch-layer-mapreduce).
 
 ## Autonomous optimization
 
@@ -244,236 +195,42 @@ for the mechanism, [Results](#results) below for measured effect.
 
 ## Experimental methodology
 
-**Dataset.** `scripts/generate_interactions.py` generates a
-synthetic-but-structured interaction log over the real 300-product
-catalog: Zipfian-skewed item popularity, per-user category
-preferences (1-3 preferred categories, 80% in-category / 20%
-exploration), and a view→cart→purchase funnel (P(cart|view)=0.35,
-P(purchase|cart)=0.4) matching the same 1/3/5 weighting
-`recommendation-service` already uses. 2,000 synthetic users, 14
-simulated weeks, 62,234 raw events → 31,219 weighted (user, item)
-pairs after aggregation. This is documented, disclosed synthetic data,
-never presented as real user behavior -- see
-[Limitations](#limitations) for what that does and doesn't justify.
+**Dataset & split.** [RetailRocket](https://www.kaggle.com/datasets/retailrocket/ecommerce-dataset)
+-- real, public clickstream data, ~2.75M events over 4.5 months, ~1.4M
+users, ~235K items. `train_als.py` weights raw events the same way the
+rest of this project does (`view=1, addtocart=3, transaction=5`),
+aggregates to one (user, item) row per pair, then splits users with
+`MIN_INTERACTIONS_FOR_EVAL=5` or more into an 80/20 random train/test
+split (`seed=42`); users below that threshold still contribute to
+training but aren't part of the held-out evaluation, since with 1-2
+interactions a held-out item is mostly noise.
 
-**Splits.** Two, used for different questions:
-- *Random 80/20* (`experiments/recommendation/split_interactions.py`)
-  -- matches the existing RetailRocket job's methodology, used for the
-  main model comparison, hybrid sweep, and hyperparameter ablations.
-  Users need ≥5 distinct interactions to get a held-out test split.
-- *Temporal* (`experiments/recommendation/temporal_eval.py`) -- weeks
-  1-12 train, week 14 test (week 13 reserved, unused here) -- a
-  production system never gets to peek at future interactions, so this
-  is the more realistic evaluation.
+**Metrics.** Precision@10, computed natively in Spark
+(`train_als.py`'s own `precision_at_k`): request `k×3` candidates per
+test user (ALS doesn't exclude already-seen items on its own), drop
+training pairs via a left-anti join, take the top-`k` by score, then
+intersect against each user's held-out actual items using
+`array_intersect` + `size` rather than a Python UDF, so the hit-count
+runs in the JVM instead of round-tripping rows through Python.
+`experiments/recommendation/metrics.py` implements the same
+Precision/Recall/MAP/NDCG@k formulas as plain, dataset-agnostic Python
+(hand-verified against known examples -- see the module's own test
+invocations) for anything that isn't a Spark job; nothing in this
+repo currently calls it, since the only recommendation-quality
+experiment left *is* the Spark job above. `experiments/recommendation/bootstrap.py`
+similarly implements percentile-method bootstrap confidence intervals,
+available and tested but not currently wired into any script either.
 
-**Metrics.** Precision@10, Recall@10, MAP@10, NDCG@10
-(`experiments/recommendation/metrics.py`, hand-verified against known
-examples before use -- see the module's own test invocations),
-computed identically across every model. For a ranked recommendation
-list `R` truncated to `k` items and a user's held-out actual-interaction
-set `A` (relevance is binary -- `A` has no graded ratings):
-
-```
-Precision@k = |R[:k] ∩ A| / k
-Recall@k    = |R[:k] ∩ A| / |A|
-```
-
-`AP@k` (averaged across users into `MAP@k`) sums precision at each rank
-`i` where `R[i]` is a hit, then normalizes by `min(|A|, k)` -- not by
-however many hits were actually found, so a user with fewer possible
-hits than `k` isn't penalized for a ranking that could never reach 1.0:
-
-```
-AP@k = ( Σ_{i=1..k, R[i]∈A} Precision@i ) / min(|A|, k)
-```
-
-`NDCG@k` uses a binary-relevance log discount (`1/log2(rank+1)` per
-hit, no graded-relevance term since relevance here is binary), and
-normalizes against the best-case DCG a user with `|A|` actual items
-could possibly achieve, not a fixed constant:
-
-```
-DCG@k  = Σ_{i=1..k, R[i]∈A} 1/log2(i+1)
-IDCG@k = Σ_{i=1..min(|A|,k)} 1/log2(i+1)
-NDCG@k = DCG@k / IDCG@k
-```
-
-All four are computed per user, then averaged (unweighted, so heavy and
-light users count equally) across every user with a held-out split.
-
-**Bootstrap confidence intervals.**
-`experiments/recommendation/bootstrap.py` implements the percentile
-method: resample the test users with replacement (the sampling unit is
-the user, not a raw per-metric value, since one user's Precision@10
-isn't an independent draw the way a coin flip is), recompute the mean
-over each resample, repeat 1,000 times, and take the 2.5th/97.5th
-percentiles of the resulting distribution as the 95% CI. The
-CF-vs-hybrid comparison uses a paired variant instead of two
-independent CIs -- the *same* resampled user indices are applied to
-both models each iteration, preserving the correlation between them
-(both are scored on the same users), which is what lets the CI on
-their *difference* be narrower than either model's own CI would
-suggest.
-
-**Reproducing a run.** No Docker needed for the recommendation
-experiments -- local-mode PySpark. See
-[docs/RUNNING_LOCALLY.md](RUNNING_LOCALLY.md#recommendation-experiments).
-The throughput, optimizer, and fault-tolerance experiments need the
-full stack (`docker compose up`).
+**Reproducing a run.** Needs the full Docker Spark+HDFS stack (RetailRocket
+CSV loaded into HDFS first) -- see
+[docs/RUNNING_LOCALLY.md](RUNNING_LOCALLY.md). The throughput,
+optimizer, and fault-tolerance experiments need the same full stack
+running (`docker compose up`); the CF scalability benchmark needs only
+a local Python virtualenv.
 
 ## Results
 
-### RQ2: model comparison (random split, k=10, 1,866 test users)
-
-| Model | Precision@10 | Recall@10 | MAP@10 | NDCG@10 | Latency/request |
-|---|---|---|---|---|---|
-| Popularity | 0.087 | 0.272 | 0.108 | 0.190 | ~0ms |
-| Item-CF (production code) | 0.118 | 0.374 | **0.224** | **0.327** | 163ms |
-| Content-based (TF-IDF) | 0.014 | 0.044 | 0.012 | 0.028 | 0.06ms |
-| Catalog-ALS | **0.119** | **0.376** | 0.211 | 0.315 | **5.6-9.0ms**\* |
-| Neural CF (NeuMF) | 0.109 | 0.343 | 0.196 | 0.292 | 0.33ms |
-
-\* Run twice, 2026-08-25 (5.64ms) and 2026-09-16 (9.03ms) -- same
-model, same eval methodology (`experiments/recommendation/results/offline_models.jsonl`
-has both), a 60% difference on different macOS builds (26.6.2 vs
-27.0). Plausibly measurement noise rather than a real regression, but
-nothing here rules that out, so both are reported rather than picking
-one.
-
-CF and ALS are nearly tied on precision/recall; CF ranks slightly
-better (MAP/NDCG), ALS serves **18-29x faster** (163ms / 9.0-5.6ms)
-since it's a precomputed lookup rather than live cosine recomputation
-over the full candidate set. Both comfortably beat popularity and
-content-based alone -- content-based's weak standalone performance
-suggests category/brand/description similarity alone is a poor proxy
-for this catalog's actual purchase patterns. Neural CF lands between
-popularity and CF/ALS on every quality metric -- ahead of a
-non-personalized ranking, but not ahead of either classical
-collaborative-filtering method on this dataset (see
-[Algorithm definitions](#algorithm-definitions) for why that's an
-expected result of dataset size, not a training bug).
-Its per-request latency (0.33ms) is close to ALS's despite scoring the
-whole catalog live on every call, with no precomputed lookup table at
-all.
-
-### RQ3: hybrid blend (same split, alpha sweep)
-
-| α (ALS weight) | Precision@10 | Recall@10 | MAP@10 | NDCG@10 |
-|---|---|---|---|---|
-| 0.00 (pure CF) | 0.1266 | 0.3997 | 0.2338 | 0.3413 |
-| 0.25 | **0.1271** | **0.4002** | 0.2374 | **0.3450** |
-| 0.50 | 0.1258 | 0.3952 | **0.2393** | 0.3445 |
-| 0.75 | 0.1230 | 0.3875 | 0.2298 | 0.3344 |
-| 1.00 (pure ALS) | 0.1191 | 0.3756 | 0.2108 | 0.3148 |
-
-(These are full-catalog-scored numbers -- higher than the table above,
-which uses each model's own production candidate-shortlisting. See
-`experiments/recommendation/hybrid.py`'s docstring.)
-
-A blend around **α=0.25-0.5 beats both pure CF and pure ALS** on every
-metric. The CF+content blend, by contrast, only degrades monotonically
-as content weight increases (0.1266 → 0.0145 from α=0 to α=1) --
-consistent with content-based's weak standalone showing above.
-
-### Statistical significance (bootstrap confidence intervals)
-
-Point estimates alone don't say whether an observed gap reflects a
-real effect or just which users happened to land in the held-out test
-set. `experiments/recommendation/bootstrap_ci.py` answers that with a
-percentile bootstrap (1,000 resamples over the 1,866 test users) for
-every metric in the model comparison and the hybrid alpha sweep, plus
-a paired bootstrap -- the same resampled user indices applied to both
-models each iteration, to preserve the pairing -- for the CF-vs-hybrid
-gap specifically.
-
-**Model comparison, 95% CI:**
-
-| Model | Precision@10 | Recall@10 | MAP@10 | NDCG@10 |
-|---|---|---|---|---|
-| Popularity | 0.0869 [0.0827, 0.0909] | 0.2724 [0.2593, 0.2854] | 0.1080 [0.1002, 0.1152] | 0.1899 [0.1806, 0.1995] |
-| Item-CF | 0.1175 [0.1133, 0.1219] | 0.3742 [0.3609, 0.3880] | 0.2244 [0.2142, 0.2349] | 0.3266 [0.3145, 0.3388] |
-| Content-based | 0.0144 [0.0126, 0.0161] | 0.0436 [0.0372, 0.0492] | 0.0124 [0.0103, 0.0144] | 0.0277 [0.0241, 0.0314] |
-
-**CF vs. hybrid (α=0.25), paired bootstrap on the difference:**
-
-| Metric | CF | Hybrid | Δ | 95% CI | Distinguishable from 0? |
-|---|---|---|---|---|---|
-| Precision@10 | 0.1175 | 0.1271 | +0.0095 | [0.0074, 0.0117] | Yes |
-| Recall@10 | 0.3742 | 0.4002 | +0.0260 | [0.0185, 0.0335] | Yes |
-| MAP@10 | 0.2244 | 0.2374 | +0.0130 | [0.0093, 0.0168] | Yes |
-| NDCG@10 | 0.3266 | 0.3450 | +0.0183 | [0.0140, 0.0226] | Yes |
-
-Every one of the four metrics' 95% CI sits entirely above zero -- the
-hybrid's edge over pure CF is real, not sampling noise from this
-particular test-user split. That won't necessarily hold for every gap
-reported elsewhere in this document -- several of the ablation deltas
-above are small enough that the same check would plausibly swallow
-them in noise, and that's an honest possible outcome of this method,
-not a failure of it -- but for the headline RQ3 result, it holds up.
-
-### Multi-seed robustness check
-
-The bootstrap above answers "is this gap real for *this* simulated
-population." A separate question: does the whole result hold up
-against a *different* simulated population? `experiments/recommendation/
-multi_seed.py` regenerates the interaction log and train/test split
-from scratch at 5 seeds (1, 7, 21, 42, 100 -- 42 is the canonical run
-used everywhere else in this document) and reruns the full model
-comparison and hybrid sweep at each, reporting mean ± sample std
-across the 5 runs instead of one seed's point estimate.
-
-**Model comparison, mean ± std (Precision@10):**
-
-| Model | Precision@10 |
-|---|---|
-| Popularity | 0.0876 ± 0.0022 |
-| Item-CF | 0.1195 ± 0.0037 |
-| Content-based | 0.0156 ± 0.0010 |
-| Catalog-ALS | 0.1194 ± 0.0030 |
-
-**Hybrid CF+ALS alpha sweep, mean ± std (Precision@10):**
-
-| α | Precision@10 |
-|---|---|
-| 0.00 (pure CF) | 0.1293 ± 0.0035 |
-| 0.25 | **0.1306 ± 0.0037** |
-| 0.50 | 0.1297 ± 0.0043 |
-| 0.75 | 0.1262 ± 0.0042 |
-| 1.00 (pure ALS) | 0.1194 ± 0.0030 |
-
-The ranking of models and the best alpha (0.25) are both unchanged
-from the single-seed numbers above, and the spread across seeds
-(std ≈ 0.003-0.004, versus a ≈0.01 gap between α=0.25 and pure CF) is
-small relative to the effects being measured. Full per-metric,
-per-seed values are in
-`experiments/recommendation/results/multi_seed_summary.jsonl`.
-
-### RQ3: freshness vs. latency
-
-| Path | Latency to reflect a new interaction |
-|---|---|
-| Streaming (item-CF) | **~0.0005ms** (`_apply_event`, in-memory) |
-| Batch (catalog-ALS retrain) | **~4.5s** on this dataset (~27K training rows) |
-
-The retrain time is a floor, not a ceiling -- it would grow with data
-volume, and production would add `hbase-loader`'s reload time on top.
-The two paths aren't interchangeable at any data scale; the question
-is which staleness a given feature can tolerate.
-
-### RQ3 (temporal validity check): random split vs. temporal split
-
-| Split | Item-CF Precision@10 | Catalog-ALS Precision@10 |
-|---|---|---|
-| Random 80/20 | 0.1175 | 0.1191 |
-| Temporal (train weeks 1-12, test week 14) | 0.0678 | 0.0705 |
-
-Both models drop **~40% relative** under the temporal split. The
-random split lets a user's train and test interactions interleave in
-time; the temporal split enforces a real causal boundary. The random-
-split numbers above are the more optimistic of the two, not the more
-honest one.
-
-### RQ4: serving-optimizer, measured on/off
+### RQ1: serving-optimizer, measured on/off
 
 | Store | Metric | Off | On | Effect |
 |---|---|---|---|---|
@@ -490,27 +247,27 @@ burst itself but measurably delays individual documents becoming
 searchable -- exactly the trade-off the architecture doc already
 claimed, now confirmed rather than assumed.
 
-### Live hybrid pipeline verification
+### RetailRocket ALS: real interaction data at production sparsity
 
-The offline result above (hybrid beats either model alone) only means
-something if the live system actually serves it. It does -- verified,
-not assumed, via `tests/integration/test_hybrid_live_pipeline.py`:
+```
+Precision@10 = 0.0055
+```
 
-1. `/recommendations/precomputed/{user}` returns real, enrichable
-   catalog-native items (previously RetailRocket ids, unenrichable).
-2. `/recommendations/hybrid/{user}` reports `source: "hybrid-cf-als"`,
-   not the pure-CF fallback.
-3. Two brand-new products (created fresh in the test, absent from the
-   ALS training snapshot) fired as a live co-purchase surface through
-   `/recommendations/similar/{id}` within seconds -- proof the CF side
-   is genuinely live, not cached.
-4. `/recommendations/precomputed/{user}` for the same user is
-   byte-for-byte identical before and after that live traffic -- proof
-   the precomputed ALS side is genuinely a static batch artifact, not
-   silently recomputing.
-
-That's the freshness/latency distinction from RQ3 demonstrated live,
-not just measured offline.
+Evaluated on the held-out test split described in
+[Experimental methodology](#experimental-methodology) above. Low,
+honestly: RetailRocket is genuinely sparse (median 1 interaction per
+user across ~1.4M users and ~235K items) -- the dominant reason the
+number is low, not an implementation bug. A production system at this
+sparsity would want richer item features or a hybrid content +
+collaborative approach; this project doesn't build one here, since
+doing so on this project's own catalog would require a shared id space
+this dataset doesn't provide (see the note at the top of this report).
+The trained model and a precomputed top-10-recommendations table are
+persisted to HDFS and can be loaded into HBase for point-lookup
+serving -- see
+[docs/ARCHITECTURE.md](ARCHITECTURE.md#serving-layer-hbase) for why
+those recommendations, once loaded, still can't be enriched into real
+product details through this project's own `product-service`.
 
 ### CF scalability
 
@@ -524,7 +281,12 @@ every request is O(n_items) per call -- fine at this project's real
 proportional traffic (`experiments/recommendation/scalability_benchmark.py`
 -- users scale with items at this project's own real ratio, since a
 catalog that's genuinely grown presumably serves proportionally more
-traffic too, not the same fixed user count spread thinner):
+traffic too, not the same fixed user count spread thinner). This
+benchmark uses synthetic *traffic*, generated directly into the
+engine's dicts rather than through Kafka, to drive a real, unmodified
+production class -- a load-generation detail, not a recommendation-
+quality claim, so it carries none of the concern the removed synthetic
+interaction log did (see the note at the top of this report):
 
 | Items | Users | Live p95 | Cache build | Cached p95 | Speedup |
 |---|---|---|---|---|---|
@@ -541,59 +303,6 @@ the real argument for approximate/incremental methods (FAISS, HNSW, or
 updating only affected pairs) past whatever scale makes a full
 periodic rebuild itself too slow -- not attempted here, see
 [Limitations](#limitations).
-
-### RQ5: cross-category generalization
-
-Does the RQ2 model comparison hold on a different Amazon category, or
-is it an artifact of this project's own demo catalog's particular mix
-of categories (electronics, toys and games, musical instruments, cell
-phones and accessories)? Ran the exact same production code as RQ2
-(the real `RecommendationEngine` via `offline_models.build_cf_engine`,
-the same `metrics.py`) against a genuinely different, separately-fetched
-Amazon category -- **All_Beauty**, 201 real products, none of the main
-catalog's four categories -- with its own independently-generated
-synthetic interaction log at a comparable users-per-product density
-(2,000/300 in the main catalog; 1,340/201 here, same ratio). ALS and
-NeuMF are out of scope for this check -- see
-`experiments/recommendation/cross_category/README.md`.
-
-| Model | Precision@10 | Recall@10 | MAP@10 | NDCG@10 | Latency/request |
-|---|---|---|---|---|---|
-| Popularity | 0.1181 | 0.3918 | 0.1864 | 0.2905 | ~0ms |
-| Content-based (TF-IDF) | 0.0143 | 0.0462 | 0.0152 | 0.0303 | 0.05ms |
-| Item-CF (production code) | **0.1424** | **0.4739** | **0.3158** | **0.4269** | 116ms |
-
-**The comparison generalizes.** Item-CF beats popularity, which beats
-content-based, by a wide margin on both catalogs -- not an artifact of
-the main catalog's category mix.
-
-**Every model scores higher on the single-category catalog**, popularity
-and item-CF especially (NDCG@10 0.29 vs. 0.19, and 0.43 vs. 0.33 on the
-main catalog). Plausible mechanism: with only one category, a user's
-session has no "off-category exploration" branch diluting the signal
-(`generate_interactions.py`'s `P_OFF_CATEGORY` draw always resolves to
-the same category here), so both the popularity ranking and item-CF's
-co-occurrence structure are less noisy per user than on a 4-category mix.
-
-**Content-based stays weak either way, but for a different reason.** On
-the main catalog its similarity text is category+brand+description; on
-this single-category catalog, category is now *constant* across every
-product -- a real feature became a no-op one, leaving TF-IDF similarity
-riding on brand and description alone. Its score barely moves (0.014 ->
-0.014 precision@10), which is itself informative: category wasn't doing
-much useful work for content-based even when it *did* vary.
-
-**Building this surfaced two real bugs** in code every other
-recommendation experiment also depends on (both now fixed): (1)
-`scripts/fetch_amazon_products.py` -- used to build the *main* demo
-catalog too -- had silently stopped working, because HuggingFace now
-serves large dataset files through a redirect to a signed,
-content-addressed CDN URL that the fsspec-based streaming range-read
-this script used can't get a file size back from; and (2)
-`generate_interactions.py`'s per-user "preferred categories" draw
-(`rng.choice(..., size=n_preferred, replace=False)`, up to 3) crashes on
-any catalog with fewer than 3 categories -- fine for the main catalog's
-4, silently unguarded for a single-category one.
 
 ### Systems experiments
 
@@ -651,129 +360,64 @@ and consumer lag, not errors.
   documented reindex-on-`product-service`-startup design is what
   actually matters here.
 
-## Ablation studies
-
-### Event weighting (RQ1)
-
-| Scheme | Item-CF Precision@10 | Catalog-ALS Precision@10 |
-|---|---|---|
-| Uniform (1/1/1) | **0.1225** | 0.1152 |
-| Linear (1/2/3) | 0.1209 | 0.1176 |
-| Production (1/3/5) | 0.1175 | **0.1191** |
-| Steep (1/5/10) | 0.1103 | 0.1180 |
-
-Item-CF's precision *declines* as weighting steepens -- it does best
-with flat weights. Catalog-ALS is roughly flat, peaking near the
-production scheme. Neither model swings more than ~10% relative
-across the whole range: weighting matters, but this system is not
-highly sensitive to the exact scheme chosen.
-
-### ALS hyperparameters (rank × regParam)
-
-| rank | regParam=0.01 | regParam=0.1 | regParam=0.5 |
-|---|---|---|---|
-| 5 | 0.1281 | 0.1300 | **0.1320** |
-| 10 (production) | 0.1153 | 0.1191 | 0.1303 |
-| 20 | 0.0826 | 0.0973 | 0.1252 |
-
-The production defaults (rank=10, regParam=0.1, inherited from the
-much larger RetailRocket job) are **not** optimal at this catalog's
-scale -- regParam=0.5 improves every metric at every rank tested, and
-lower rank consistently beats higher rank. A smaller, sparser catalog
-needs more regularization and less model capacity than a 2.75M-event
-dataset does.
-
-### CF neighbor count
-
-`recommend_for_user` considers a fixed number of similar items per
-seed item. Sweeping that:
-
-| Neighbor count | Precision@10 | NDCG@10 |
-|---|---|---|
-| 5 | 0.1033 | 0.2889 |
-| 10 | 0.1088 | 0.3013 |
-| 20 (former production default) | 0.1175 | 0.3266 |
-| 50 (production) | **0.1260** | **0.3426** |
-
-Quality improved **monotonically** through 50 with no plateau, so
-production was raised from 20 to 50 on the strength of this result --
-the compute cost of considering more neighbors falls on the periodic
-background refresh, not the request path, so there was little reason
-left to stay conservative. 50 was also already `NEIGHBOR_CACHE_SIZE`,
-so the change needed no cache resizing. Whether quality keeps
-improving past 50 is untested and would need a wider sweep.
-
 ## Limitations
 
-- **Synthetic interaction data.** The recommendation experiments run
-  on a generated, documented-as-synthetic interaction log, not real
-  user behavior. The generative model (Zipfian popularity, category
-  affinity, a purchase funnel) is deliberately structured so models
-  have real signal to learn from, but absolute metric values should
-  not be read as "this is what real users would do" -- only the
-  *relative* comparisons between models, splits, and configurations
-  are the actual claims this report makes.
+- **One real interaction dataset, and it doesn't share this project's
+  own catalog.** RetailRocket is the only recommendation-quality data
+  point in this project. Its item ids are disjoint from the demo
+  catalog `product-service` and `recommendation-service` serve, so
+  there's no way, without fabricating data, to directly compare it
+  against this project's own real-time item-CF model on the same
+  users and items. An earlier version of this report worked around
+  that by generating a synthetic interaction log over the real catalog
+  -- see the note at the top of this report for why that's been
+  removed rather than kept.
 - **Replay-completion proxies, not guarantees.** The fault-tolerance
   experiment's "stabilized" metric for `recommendation-service` is an
   observable proxy (the visible top-10 stopped changing), not direct
   confirmation the full Kafka topic replay finished -- a full replay
   could plausibly continue slightly longer without visibly changing
   a small top-10 window.
-- **The scalability fix has its own scaling limit.** The precomputed
-  neighbor cache turns per-request cost from O(n_items) into O(1), but
-  building it is still O(n_items²)-ish, and that cost grew faster than
-  expected once traffic scaled alongside catalog size (142s → 358s,
-  3,000 → 5,000 items). Not measured past 5,000 items here -- see
-  [Future work](#future-work).
-- **Single-host, single-run measurements (recommendation quality
-  excepted).** Everything here was measured on one Apple Silicon Mac,
-  under Docker Desktop resource limits, competing with this session's
-  own other testing activity at times. The recommendation-quality
-  metrics now carry both a bootstrap CI within one fixed test split
-  (see [Statistical significance](#statistical-significance-bootstrap-confidence-intervals))
-  and a 5-seed rerun across differently-generated populations (see
-  [Multi-seed robustness check](#multi-seed-robustness-check)) -- the
-  two together cover sampling variance and population variance. The
-  throughput and fault-tolerance experiments have since been run twice
-  each, three weeks apart, and reproduced the same qualitative pattern
-  both times (see [Systems experiments](#systems-experiments)) -- real
-  signal that the results aren't a fluke of one run, but still not a
-  formal CI or a controlled multi-seed design. The optimizer numbers
+- **The CF scalability fix has its own scaling limit.** The
+  precomputed neighbor cache turns per-request cost from O(n_items)
+  into O(1), but building it is still O(n_items²)-ish, and that cost
+  grew faster than expected once traffic scaled alongside catalog size
+  (142s → 358s, 3,000 → 5,000 items). Not measured past 5,000 items
+  here -- see [Future work](#future-work).
+- **Single-host, single-run measurements (RetailRocket ALS and the CF
+  scalability benchmark excepted -- both deterministic given their
+  fixed seeds).** Everything here was measured on one Apple Silicon
+  Mac, under Docker Desktop resource limits, competing with this
+  session's own other testing activity at times. The throughput and
+  fault-tolerance experiments have been run twice each, three weeks
+  apart, and reproduced the same qualitative pattern both times (see
+  [Systems experiments](#systems-experiments)) -- real signal that the
+  results aren't a fluke of one run, but still not a formal confidence
+  interval or a controlled multi-trial design. The optimizer numbers
   remain a single trial: no reruns yet.
 - **Optimizer experiments are short, targeted bursts**, not sustained
   production-scale traffic -- real effect sizes at higher, sustained
   load are plausibly different (likely larger for the Postgres index,
   since benefit compounds with query volume).
-- **RQ5 is one additional category, not a systematic sweep.** All_Beauty
-  generalizes the RQ2 ranking, but one category is an existence proof
-  ("this isn't specific to the main catalog"), not a claim it holds for
-  *every* category -- no bootstrap CI or multi-seed rerun was done on
-  this catalog the way RQ2/RQ3 got, and ALS/NeuMF weren't extended to
-  it (see [Future work](#future-work)).
 
 ## Future work
 
-- Apply the same bootstrap-CI and multi-seed treatment to the
-  throughput, optimizer, and fault-tolerance experiments -- still no
-  formal variance estimate, unlike the recommendation metrics.
-  Throughput and fault-tolerance have each been run twice now (see
-  [Limitations](#limitations)), which is informal reproducibility
-  evidence at best, not a substitute for this.
-- Extend the temporal evaluation to actually use the reserved
-  validation week for early stopping / hyperparameter selection,
-  rather than only train/test.
-- A real content-based feature set (embeddings over product images/
-  descriptions) instead of TF-IDF, given how weak TF-IDF content
-  similarity turned out to be standalone.
+- Apply bootstrap-CI and repeated-trial treatment to the throughput,
+  optimizer, and fault-tolerance experiments -- still no formal
+  variance estimate. `experiments/recommendation/bootstrap.py` already
+  implements the method and is tested; it just isn't wired to any of
+  these experiments yet.
 - Approximate nearest-neighbor search (FAISS/HNSW/Annoy) or
   incremental per-pair similarity updates in place of the neighbor
   cache's full periodic rebuild, past whatever catalog+traffic scale
   makes that rebuild itself too slow -- not reached in this project's
   measurements (5,000 items), but the cache-build growth trend is the
   concrete argument for it.
-- Extend RQ5 to more categories (a systematic sweep, not one
-  additional data point), and to ALS/NeuMF, which were deliberately
-  out of scope for the first cross-category check.
+- If this project's own catalog ever has real user interaction data
+  (rather than seeded/simulated traffic) at meaningful volume, a
+  same-catalog comparison between the real-time item-CF model and a
+  catalog-trained ALS model would be the honest version of the
+  comparison this report used to run on fabricated data.
 
 ## References
 
