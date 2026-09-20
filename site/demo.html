@@ -167,7 +167,14 @@
 
   <section class="card">
     <h2>Personalized Recommendations <span class="badge">ALS / HBase</span> <span class="badge frozen">Frozen data</span></h2>
-    <p class="subtitle">Real catalog-native ALS output, captured for a handful of visitor ids -- pick one below (only these have a captured snapshot; a live lookup accepts any id).</p>
+    <p class="subtitle">This endpoint serves precomputed ALS recommendations trained on the real
+      <a href="https://www.kaggle.com/datasets/retailrocket/ecommerce-dataset">RetailRocket</a> clickstream
+      dataset (see the <a href="index.html#research">research report</a>) -- its item ids are their own space,
+      disjoint from this demo's own product catalog. An earlier version of this demo showed recommendations
+      enriched into real product names, from a model trained on a synthetic interaction log fabricated to make
+      the ids line up; that model has been removed as dishonest research (see the project README). What's
+      captured below is the real, current response for every visitor id tried: none, since this environment
+      hasn't loaded RetailRocket data into HBase.</p>
     <div class="controls">
       <label>Visitor ID:
         <select id="rec-visitor-id">
@@ -175,9 +182,7 @@
           <option value="1">1</option>
           <option value="100">100</option>
           <option value="500">500</option>
-          <option value="1500">1500</option>
           <option value="1866">1866</option>
-          <option value="42">42 (no recommendations -- shows the empty state)</option>
         </select>
       </label>
       <button type="button" id="rec-lookup-btn">Look up</button>
@@ -304,7 +309,7 @@
     var container = document.getElementById("rec-results");
     var items = DATA.recommendations[String(visitorId)];
     if (!items) {
-      container.innerHTML = '<div class="empty">No precomputed recommendations for this visitor id (try one with enough history, e.g. 54).</div>';
+      container.innerHTML = '<div class="empty">No precomputed recommendations for this visitor_id -- real, current response (see the panel description above).</div>';
       return;
     }
     container.innerHTML = "";

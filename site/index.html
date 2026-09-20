@@ -7,12 +7,12 @@
 <meta name="description" content="A distributed recommendation and analytics platform (Kafka, Spark, HBase, Cassandra, Elasticsearch) with a real experimental evaluation of recommendation quality, streaming/batch serving latency, and fault tolerance.">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <meta property="og:title" content="Distributed E-Commerce Recommendation Analytics System">
-<meta property="og:description" content="Five research questions, five recommendation models compared head-to-head, and fault-tolerance and throughput experiments run against the live system, not simulated.">
+<meta property="og:description" content="A workload-aware database optimizer measured on/off, real-data ALS at production sparsity, and fault-tolerance and throughput experiments run against the live system, not simulated.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://charith-reddy-pareddy.github.io/distributed-ecommerce-recommendation-analytics-system/">
 <meta name="twitter:card" content="summary">
 <meta name="twitter:title" content="Distributed E-Commerce Recommendation Analytics System">
-<meta name="twitter:description" content="Five research questions, five recommendation models compared head-to-head, and fault-tolerance and throughput experiments run against the live system, not simulated.">
+<meta name="twitter:description" content="A workload-aware database optimizer measured on/off, real-data ALS at production sparsity, and fault-tolerance and throughput experiments run against the live system, not simulated.">
 <style>
   :root {
     color-scheme: light;
@@ -278,8 +278,9 @@
     <p class="lede">
       An event-driven e-commerce platform (Kafka, Spark, HBase, Cassandra, Elasticsearch)
       built to actually answer that question, not just implement the stack &mdash;
-      five research questions, five recommendation models compared head-to-head,
-      and fault-tolerance and throughput experiments run against the live system,
+      a workload-aware database optimizer measured on and off, a real-data ALS
+      collaborative filter evaluated at production-realistic sparsity, and
+      fault-tolerance and throughput experiments run against the live system,
       not simulated.
     </p>
     <div class="cta-row">
@@ -289,41 +290,31 @@
       <a class="btn secondary" href="https://github.com/Charith-Reddy-Pareddy/distributed-ecommerce-recommendation-analytics-system/blob/main/docs/ARCHITECTURE.md">Architecture deep-dive</a>
     </div>
     <div class="stat-row">
-      <div class="stat-tile"><div class="label">Recommendation models compared</div><div class="value">5</div></div>
       <div class="stat-tile"><div class="label">Services</div><div class="value">9</div></div>
-      <div class="stat-tile"><div class="label">Test suite</div><div class="value">119</div></div>
+      <div class="stat-tile"><div class="label">Test suite</div><div class="value">127</div></div>
       <div class="stat-tile"><div class="label">Fault-injection experiments</div><div class="value">3</div></div>
+      <div class="stat-tile"><div class="label">Postgres p95 latency cut</div><div class="value">45<span class="unit">%</span></div></div>
     </div>
   </section>
 
   <section id="research" class="reveal">
-    <h2>Research questions</h2>
-    <p class="section-sub">The project's architecture exists to answer these &mdash; each one backed by a reproducible experiment under <code>experiments/</code>, not just a design decision.</p>
+    <h2>Research question</h2>
+    <p class="section-sub">The project's architecture exists to answer this &mdash; backed by a reproducible experiment under <code>experiments/</code>, not just a design decision. Two further real findings, on a real dataset in each case, are reported alongside it below.</p>
     <div class="rq-grid">
       <div class="rq-card">
         <div class="rq-id">RQ1</div>
-        <p>How does event-weighted implicit feedback (view=1, cart=3, purchase=5) affect recommendation quality versus alternative weighting schemes?</p>
-        <p class="answer">Precision@10 moves at most ~10% relative across weighting schemes tested &mdash; item-CF actually does slightly better with flatter weights.</p>
-      </div>
-      <div class="rq-card">
-        <div class="rq-id">RQ2</div>
-        <p>How does a real-time item-item recommender compare against batch ALS on quality, latency, and freshness?</p>
-        <p class="answer">CF and ALS are nearly tied on Precision@10 (0.118 vs 0.119); ALS serves 18&ndash;29x faster as a precomputed lookup.</p>
-      </div>
-      <div class="rq-card">
-        <div class="rq-id">RQ3</div>
-        <p>What is the trade-off between recommendation freshness and serving latency in a streaming + batch architecture?</p>
-        <p class="answer">The CF neighbor cache trades a bounded staleness window for O(1) lookups &mdash; live p95 fell from 90ms to 0.054ms at 5,000 items.</p>
-      </div>
-      <div class="rq-card">
-        <div class="rq-id">RQ4</div>
         <p>Can workload-aware database optimization reduce serving latency without excessive write/indexing overhead?</p>
         <p class="answer">The autonomous Postgres indexer cut p95 read latency 45% (6.1ms &rarr; 3.4ms) for negligible measured write overhead.</p>
       </div>
       <div class="rq-card">
-        <div class="rq-id">RQ5</div>
-        <p>Does the model comparison generalize to a different Amazon product category, or is it specific to this project's own catalog mix?</p>
-        <p class="answer">Re-run on a separately-fetched category (All_Beauty, 201 products): item-CF beats popularity beats content-based, same as before &mdash; and every model scores higher with no off-category noise diluting the signal.</p>
+        <div class="rq-id">FINDING</div>
+        <p>What does implicit-feedback ALS collaborative filtering look like on real, sparse clickstream data, rather than a curated benchmark?</p>
+        <p class="answer">Precision@10 = 0.0055 on RetailRocket's ~2.75M real events &mdash; low mainly because the dataset itself is sparse (median 1 interaction/user), not a bug.</p>
+      </div>
+      <div class="rq-card">
+        <div class="rq-id">FINDING</div>
+        <p>Does the real-time item-item recommender's naive similarity lookup actually scale as the catalog grows?</p>
+        <p class="answer">No &mdash; live p95 latency grew 8ms to 90ms from 300 to 5,000 items. A precomputed neighbor cache holds it at 0.002&ndash;0.054ms throughout.</p>
       </div>
     </div>
   </section>
@@ -332,7 +323,7 @@
     <h2>Architecture</h2>
     <p class="section-sub">Lambda-style: every event flows through one Kafka topic, consumed independently by a real-time (speed) path and a batch (Spark/HBase) path, with no shared database between services.</p>
     <div class="arch-diagram">
-      <svg viewBox="0 0 900 300" role="img" aria-label="Architecture flow: client posts to event-service, which publishes to Kafka; recommendation-service, analytics-service, HDFS sink, and Spark streaming all consume independently; Spark and MapReduce feed batch ALS and HBase; recommendation-service reads HBase and product-service to serve hybrid recommendations.">
+      <svg viewBox="0 0 900 300" role="img" aria-label="Architecture flow: client posts to event-service, which publishes to Kafka; recommendation-service, analytics-service, HDFS sink, and Spark streaming all consume independently; Spark and MapReduce feed batch ALS and HBase; recommendation-service reads HBase for precomputed ALS recs and reads product-service to enrich its own live CF recommendations.">
         <text x="60" y="30" class="axis-label" font-size="12" font-weight="600">client</text>
         <rect x="20" y="40" width="90" height="34" rx="6" fill="none" stroke="var(--baseline)"/>
         <text x="65" y="61" text-anchor="middle" font-size="12" fill="var(--text-primary)">Client</text>
@@ -363,9 +354,6 @@
         <rect x="700" y="180" width="90" height="30" rx="6" fill="var(--series-2)" fill-opacity="0.12" stroke="var(--series-2)"/>
         <text x="745" y="199" text-anchor="middle" font-size="11" fill="var(--text-primary)">HBase</text>
 
-        <rect x="700" y="10" width="90" height="30" rx="6" fill="var(--series-3)" fill-opacity="0.12" stroke="var(--series-3)"/>
-        <text x="745" y="29" text-anchor="middle" font-size="11" fill="var(--text-primary)">Hybrid recs</text>
-
         <rect x="700" y="60" width="90" height="30" rx="6" fill="none" stroke="var(--baseline)"/>
         <text x="745" y="79" text-anchor="middle" font-size="11" fill="var(--text-primary)">product-service</text>
 
@@ -379,9 +367,8 @@
           <path d="M440,57 C465,57 465,139 490,139"/>
           <path d="M440,57 C465,57 465,195 490,195"/>
           <path d="M640,195 H700"/>
-          <path d="M745,180 V60"/>
-          <path d="M790,75 C820,75 820,25 790,25"/>
-          <path d="M700,75 C680,75 660,50 640,30"/>
+          <path d="M790,180 C840,180 840,18 640,18"/>
+          <path d="M700,75 C680,75 660,45 640,33"/>
         </g>
         <defs>
           <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
@@ -389,7 +376,7 @@
           </marker>
         </defs>
       </svg>
-      <p class="arch-note">Speed layer (top): four independent Kafka consumers, at-least-once, no shared offsets. Batch layer (bottom): HDFS &rarr; MapReduce popularity job + Spark MLlib ALS &rarr; HBase, blended with live CF at serve time.</p>
+      <p class="arch-note">Speed layer (top): four independent Kafka consumers, at-least-once, no shared offsets. Batch layer (bottom): HDFS &rarr; MapReduce popularity job + Spark MLlib ALS &rarr; HBase, served directly as precomputed recommendations (top arrow) -- raw RetailRocket ids, never enriched, since that dataset's ids are disjoint from the demo catalog <code>product-service</code> enriches for the live CF path below it.</p>
     </div>
   </section>
 
@@ -398,38 +385,37 @@
     <p class="section-sub">Real numbers from <code>experiments/</code>, not illustrative placeholders &mdash; every chart below is generated from the checked-in <code>results/*.jsonl</code> files.</p>
 
     <div class="chart-card">
-      <h3>Model comparison &mdash; RQ2</h3>
-      <p class="chart-sub">Random split, k=10, 1,866 test users. Item-CF and catalog-ALS are nearly tied on quality; both comfortably beat popularity and content-based alone.</p>
-      <div class="legend">
-        <span class="key"><span class="swatch" style="background:var(--series-1)"></span>Precision@10</span>
-        <span class="key"><span class="swatch" style="background:var(--series-2)"></span>NDCG@10</span>
-      </div>
-      <div id="chart-models"></div>
-      <details class="table-toggle"><summary>View as table</summary>
-        <table class="data-table" id="table-models"></table>
-      </details>
+      <h3>RQ1 &mdash; serving-optimizer, measured on/off</h3>
+      <p class="chart-sub">Real controlled traffic, autonomous tuner on vs. off. The Postgres win is close to free; the Elasticsearch result is a genuine trade-off, not a one-sided win.</p>
+      <table class="data-table">
+        <tr><th>Store</th><th>Metric</th><th class="num">Off</th><th class="num">On</th><th class="num">Effect</th></tr>
+        <tr><td>Postgres</td><td>read p95 (filtered query)</td><td class="num">6.14ms</td><td class="num">3.38ms</td><td class="num">&minus;45%</td></tr>
+        <tr><td>Postgres</td><td>write p50</td><td class="num">3.41ms</td><td class="num">3.63ms</td><td class="num">+6% (noise)</td></tr>
+        <tr><td>Elasticsearch</td><td>burst wall time (20 creates)</td><td class="num">0.71s</td><td class="num">0.25s</td><td class="num">faster</td></tr>
+        <tr><td>Elasticsearch</td><td>time-to-searchable p50</td><td class="num">585ms</td><td class="num">1040ms</td><td class="num">slower</td></tr>
+      </table>
     </div>
 
     <div class="chart-card">
-      <h3>Cross-category generalization &mdash; RQ5</h3>
-      <p class="chart-sub">Same production code, re-run against a separately-fetched Amazon category (All_Beauty, 201 products, none of the main catalog's four) with its own synthetic interaction log. The ranking holds, and every model scores higher with no off-category noise diluting the signal.</p>
-      <div class="legend">
-        <span class="key"><span class="swatch" style="background:var(--series-1)"></span>Main catalog</span>
-        <span class="key"><span class="swatch" style="background:var(--series-3)"></span>All_Beauty</span>
+      <h3>RetailRocket ALS &mdash; real interaction data, honest sparsity</h3>
+      <p class="chart-sub">Spark MLlib ALS trained and evaluated entirely on real clickstream events, not simulated. Its item ids are their own space, disjoint from this project's own demo catalog.</p>
+      <div class="stat-row">
+        <div class="stat-tile"><div class="label">Precision@10</div><div class="value">0.0055</div></div>
+        <div class="stat-tile"><div class="label">Real events</div><div class="value">2.75<span class="unit">M</span></div></div>
+        <div class="stat-tile"><div class="label">Users</div><div class="value">1.4<span class="unit">M</span></div></div>
+        <div class="stat-tile"><div class="label">Median interactions/user</div><div class="value">1</div></div>
       </div>
-      <div id="chart-cross-category"></div>
-      <details class="table-toggle"><summary>View as table</summary>
-        <table class="data-table" id="table-cross-category"></table>
-      </details>
     </div>
 
     <div class="chart-card">
-      <h3>Hybrid CF + ALS blend &mdash; RQ2</h3>
-      <p class="chart-sub">Score = &alpha;&middot;ALS + (1&minus;&alpha;)&middot;CF. Quality peaks at &alpha;=0.25, the value shipped as the default in <code>services/recommendation-service</code>.</p>
-      <div id="chart-hybrid"></div>
-      <details class="table-toggle"><summary>View as table</summary>
-        <table class="data-table" id="table-hybrid"></table>
-      </details>
+      <h3>CF similarity lookup: live vs. cached</h3>
+      <p class="chart-sub">The real production <code>RecommendationEngine</code>'s <code>similar_items()</code>, measured at increasing catalog size and proportional traffic. Live cosine similarity degrades toward linear; a precomputed neighbor cache holds latency flat.</p>
+      <table class="data-table">
+        <tr><th>Items</th><th class="num">Users</th><th class="num">Live p95</th><th class="num">Cache build</th><th class="num">Cached p95</th><th class="num">Speedup</th></tr>
+        <tr><td>300</td><td class="num">2,000</td><td class="num">8.0ms</td><td class="num">1.1s</td><td class="num">0.002ms</td><td class="num">5,133x</td></tr>
+        <tr><td>3,000</td><td class="num">20,000</td><td class="num">83.8ms</td><td class="num">142.0s</td><td class="num">0.045ms</td><td class="num">1,880x</td></tr>
+        <tr><td>5,000</td><td class="num">33,333</td><td class="num">89.8ms</td><td class="num">357.6s</td><td class="num">0.054ms</td><td class="num">1,648x</td></tr>
+      </table>
     </div>
 
     <div class="chart-card">
@@ -476,8 +462,8 @@
   <section id="findings" class="reveal">
     <h2>Key findings</h2>
     <ul class="findings-list">
-      <li><strong>CF and ALS are close on quality, ALS wins on latency.</strong> Item-CF (Precision@10 0.118) and catalog-ALS (0.119) are near-tied; ALS serves 18&ndash;29x faster since it's a precomputed lookup rather than live cosine recomputation.</li>
       <li><strong>The optimizer earns its keep, at a measured cost.</strong> The Postgres auto-indexer cut p95 read latency 45% for negligible write overhead &mdash; confirmed against real controlled traffic, not just documented.</li>
+      <li><strong>Real interaction data is honestly sparse.</strong> ALS trained and evaluated on RetailRocket's real clickstream events lands at Precision@10 0.0055 &mdash; low mainly because the dataset itself is sparse (median 1 interaction/user), not a bug.</li>
       <li><strong>Elasticsearch genuinely loses its index on container replacement</strong> &mdash; confirmed via a real container swap, not just a process kill &mdash; and only recovers once product-service, not Elasticsearch itself, restarts.</li>
       <li><strong>The naive CF lookup doesn't scale, and now it doesn't have to.</strong> A precomputed neighbor cache turned live p95 latency from 90ms to 0.054ms at 5,000 items &mdash; a 1,600&ndash;5,100x speedup depending on catalog size.</li>
       <li><strong>Kafka throughput saturates well below its own unpaced ceiling</strong> once a full downstream consumer pipeline is attached &mdash; reproduced across two independent runs three weeks apart.</li>
@@ -511,7 +497,7 @@
         <ul>
           <li>Kafka &middot; Spark &middot; HBase</li>
           <li>Cassandra &middot; Elasticsearch &middot; MongoDB</li>
-          <li>FastAPI &middot; PyTorch &middot; Postgres</li>
+          <li>FastAPI &middot; Postgres</li>
         </ul>
       </div>
     </div>
@@ -616,30 +602,10 @@
     return el;
   }
 
-  // ---- data (from experiments/recommendation/results/*.jsonl and
-  //      experiments/throughput/results/throughput_sweep.jsonl) --------
-  var MODELS = [
-    { name: "Popularity", precision: 0.0869, ndcg: 0.1899 },
-    { name: "Content-based", precision: 0.0144, ndcg: 0.0277 },
-    { name: "NeuMF", precision: 0.1089, ndcg: 0.2920 },
-    { name: "Item-CF", precision: 0.1175, ndcg: 0.3266 },
-    { name: "Catalog-ALS", precision: 0.1191, ndcg: 0.3148 }
-  ];
-
-  var HYBRID = [
-    { alpha: 0.0, precision: 0.1266 },
-    { alpha: 0.25, precision: 0.1271 },
-    { alpha: 0.5, precision: 0.1258 },
-    { alpha: 0.75, precision: 0.1230 },
-    { alpha: 1.0, precision: 0.1191 }
-  ];
-
-  var CROSS_CATEGORY = [
-    { name: "Popularity", main: 0.1899, allBeauty: 0.2905 },
-    { name: "Content-based", main: 0.0277, allBeauty: 0.0303 },
-    { name: "Item-CF", main: 0.3266, allBeauty: 0.4269 }
-  ];
-
+  // ---- data (from experiments/throughput/results/throughput_sweep.jsonl;
+  //      the serving-optimizer, RetailRocket ALS, and CF scalability
+  //      results above are small enough to live directly in the HTML
+  //      tables rather than a generated chart) --------
   var THROUGHPUT = [
     { target: 100, achieved: 70.8 },
     { target: 250, achieved: 162.4 },
@@ -648,169 +614,6 @@
     { target: 1000, achieved: 340.0 },
     { target: 1500, achieved: 368.5 }
   ];
-
-  // ---- grouped bar chart: model comparison ---------------------------
-  function renderModelChart() {
-    var W = 860, H = 300, padL = 40, padR = 10, padT = 10, padB = 34;
-    var plotW = W - padL - padR, plotH = H - padT - padB;
-    var groupW = plotW / MODELS.length;
-    var barW = 22, gap = 4;
-    var maxVal = 0.35;
-
-    var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, width: "100%", role: "img", "aria-label": "Bar chart comparing Precision at 10 and NDCG at 10 across five recommendation models" });
-
-    // gridlines
-    [0, 0.1, 0.2, 0.3].forEach(function (v) {
-      var y = padT + plotH - (v / maxVal) * plotH;
-      svg.appendChild(svgEl("line", { x1: padL, x2: W - padR, y1: y, y2: y, class: "gridline" }));
-      var t = svgEl("text", { x: padL - 8, y: y + 3, class: "axis-label", "text-anchor": "end" });
-      t.textContent = v.toFixed(1);
-      svg.appendChild(t);
-    });
-    svg.appendChild(svgEl("line", { x1: padL, x2: W - padR, y1: padT + plotH, y2: padT + plotH, class: "baseline" }));
-
-    MODELS.forEach(function (m, i) {
-      var gx = padL + i * groupW + groupW / 2;
-      [["precision", "var(--series-1)"], ["ndcg", "var(--series-2)"]].forEach(function (pair, j) {
-        var key = pair[0], color = pair[1];
-        var val = m[key];
-        var h = (val / maxVal) * plotH;
-        var x = gx - barW - gap / 2 + j * (barW + gap);
-        var y = padT + plotH - h;
-        var rect = svgEl("rect", {
-          class: "bar-rect", x: x, y: y, width: barW, height: Math.max(h, 1),
-          rx: 4, ry: 4, fill: color
-        });
-        rect.addEventListener("mousemove", function (evt) {
-          showTooltip(evt, "<strong>" + m.name + "</strong><br>" + (key === "precision" ? "Precision@10" : "NDCG@10") + ": " + val.toFixed(4));
-        });
-        rect.addEventListener("mouseleave", hideTooltip);
-        svg.appendChild(rect);
-      });
-      var label = svgEl("text", { x: gx, y: padT + plotH + 18, class: "axis-label", "text-anchor": "middle" });
-      label.textContent = m.name;
-      svg.appendChild(label);
-    });
-
-    document.getElementById("chart-models").appendChild(svg);
-
-    var table = document.getElementById("table-models");
-    var html = "<tr><th>Model</th><th class='num'>Precision@10</th><th class='num'>NDCG@10</th></tr>";
-    MODELS.forEach(function (m) {
-      html += "<tr><td>" + m.name + "</td><td class='num'>" + m.precision.toFixed(4) + "</td><td class='num'>" + m.ndcg.toFixed(4) + "</td></tr>";
-    });
-    table.innerHTML = html;
-  }
-
-  // ---- grouped bar chart: cross-category generalization (RQ5) --------
-  function renderCrossCategoryChart() {
-    var W = 860, H = 260, padL = 40, padR = 10, padT = 10, padB = 34;
-    var plotW = W - padL - padR, plotH = H - padT - padB;
-    var groupW = plotW / CROSS_CATEGORY.length;
-    var barW = 26, gap = 6;
-    var maxVal = 0.5;
-
-    var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, width: "100%", role: "img", "aria-label": "Bar chart comparing NDCG at 10 for popularity, content-based, and item-CF models across the main catalog and the All Beauty cross-category catalog" });
-
-    [0, 0.1, 0.2, 0.3, 0.4, 0.5].forEach(function (v) {
-      var y = padT + plotH - (v / maxVal) * plotH;
-      svg.appendChild(svgEl("line", { x1: padL, x2: W - padR, y1: y, y2: y, class: "gridline" }));
-      var t = svgEl("text", { x: padL - 8, y: y + 3, class: "axis-label", "text-anchor": "end" });
-      t.textContent = v.toFixed(1);
-      svg.appendChild(t);
-    });
-    svg.appendChild(svgEl("line", { x1: padL, x2: W - padR, y1: padT + plotH, y2: padT + plotH, class: "baseline" }));
-
-    CROSS_CATEGORY.forEach(function (m, i) {
-      var gx = padL + i * groupW + groupW / 2;
-      [["main", "var(--series-1)", "Main catalog"], ["allBeauty", "var(--series-3)", "All_Beauty"]].forEach(function (trip, j) {
-        var key = trip[0], color = trip[1], label = trip[2];
-        var val = m[key];
-        var h = (val / maxVal) * plotH;
-        var x = gx - barW - gap / 2 + j * (barW + gap);
-        var y = padT + plotH - h;
-        var rect = svgEl("rect", {
-          class: "bar-rect", x: x, y: y, width: barW, height: Math.max(h, 1),
-          rx: 4, ry: 4, fill: color
-        });
-        rect.addEventListener("mousemove", function (evt) {
-          showTooltip(evt, "<strong>" + m.name + "</strong><br>" + label + " NDCG@10: " + val.toFixed(4));
-        });
-        rect.addEventListener("mouseleave", hideTooltip);
-        svg.appendChild(rect);
-      });
-      var label = svgEl("text", { x: gx, y: padT + plotH + 18, class: "axis-label", "text-anchor": "middle" });
-      label.textContent = m.name;
-      svg.appendChild(label);
-    });
-
-    document.getElementById("chart-cross-category").appendChild(svg);
-
-    var table = document.getElementById("table-cross-category");
-    var html = "<tr><th>Model</th><th class='num'>Main catalog NDCG@10</th><th class='num'>All_Beauty NDCG@10</th></tr>";
-    CROSS_CATEGORY.forEach(function (m) {
-      html += "<tr><td>" + m.name + "</td><td class='num'>" + m.main.toFixed(4) + "</td><td class='num'>" + m.allBeauty.toFixed(4) + "</td></tr>";
-    });
-    table.innerHTML = html;
-  }
-
-  // ---- line chart: hybrid alpha sweep --------------------------------
-  function renderHybridChart() {
-    var W = 860, H = 260, padL = 44, padR = 20, padT = 16, padB = 34;
-    var plotW = W - padL - padR, plotH = H - padT - padB;
-    var minV = 0.115, maxV = 0.130;
-
-    function xAt(a) { return padL + (a / 1.0) * plotW; }
-    function yAt(v) { return padT + plotH - ((v - minV) / (maxV - minV)) * plotH; }
-
-    var svg = svgEl("svg", { viewBox: "0 0 " + W + " " + H, width: "100%", role: "img", "aria-label": "Line chart of Precision at 10 across hybrid blend alpha from 0 to 1, peaking near alpha 0.25" });
-
-    [0.115, 0.12, 0.125, 0.13].forEach(function (v) {
-      var y = yAt(v);
-      svg.appendChild(svgEl("line", { x1: padL, x2: W - padR, y1: y, y2: y, class: "gridline" }));
-      var t = svgEl("text", { x: padL - 8, y: y + 3, class: "axis-label", "text-anchor": "end" });
-      t.textContent = v.toFixed(3);
-      svg.appendChild(t);
-    });
-
-    HYBRID.forEach(function (p) {
-      var t = svgEl("text", { x: xAt(p.alpha), y: padT + plotH + 18, class: "axis-label", "text-anchor": "middle" });
-      t.textContent = "α=" + p.alpha;
-      svg.appendChild(t);
-    });
-
-    var pts = HYBRID.map(function (p) { return xAt(p.alpha) + "," + yAt(p.precision); }).join(" ");
-    svg.appendChild(svgEl("polyline", { points: pts, fill: "none", stroke: "var(--series-1)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round" }));
-
-    var best = HYBRID.reduce(function (a, b) { return b.precision > a.precision ? b : a; });
-
-    HYBRID.forEach(function (p) {
-      var isBest = p.alpha === best.alpha;
-      var dot = svgEl("circle", {
-        cx: xAt(p.alpha), cy: yAt(p.precision), r: isBest ? 6 : 5,
-        fill: "var(--series-1)", stroke: "var(--surface)", "stroke-width": 2
-      });
-      dot.addEventListener("mousemove", function (evt) {
-        showTooltip(evt, "&alpha;=" + p.alpha + "<br>Precision@10: " + p.precision.toFixed(4) + (isBest ? " (best)" : ""));
-      });
-      dot.addEventListener("mouseleave", hideTooltip);
-      svg.appendChild(dot);
-    });
-
-    var label = svgEl("text", { x: xAt(best.alpha), y: yAt(best.precision) - 14, class: "axis-label", "text-anchor": "middle", fill: "var(--series-1)", "font-weight": "600" });
-    label.textContent = "peak: α=" + best.alpha;
-    label.setAttribute("fill", "var(--series-1)");
-    svg.appendChild(label);
-
-    document.getElementById("chart-hybrid").appendChild(svg);
-
-    var table = document.getElementById("table-hybrid");
-    var html = "<tr><th>Alpha</th><th class='num'>Precision@10</th></tr>";
-    HYBRID.forEach(function (p) {
-      html += "<tr><td>" + p.alpha + "</td><td class='num'>" + p.precision.toFixed(4) + "</td></tr>";
-    });
-    table.innerHTML = html;
-  }
 
   // ---- line chart: throughput target vs achieved ---------------------
   function renderThroughputChart() {
@@ -862,9 +665,6 @@
     table.innerHTML = html;
   }
 
-  renderModelChart();
-  renderCrossCategoryChart();
-  renderHybridChart();
   renderThroughputChart();
 })();
 </script>

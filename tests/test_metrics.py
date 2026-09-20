@@ -1,11 +1,11 @@
-"""Regression tests for experiments/recommendation/metrics.py -- the sole
-implementation behind every quality number in docs/RESEARCH_REPORT.md
-(RQ2 model comparison, RQ3 hybrid sweep, every ablation, every bootstrap
-CI). docs/RESEARCH_REPORT.md claims these were "hand-verified against
-known examples before use," but no such verification existed anywhere
-in the repo before this file -- these are those hand-worked examples,
-made real. A silent regression here would corrupt every headline result
-with nothing to catch it.
+"""Regression tests for experiments/recommendation/metrics.py -- pure
+Precision/Recall/MAP/NDCG@k functions, dataset-agnostic and currently
+unused by any script in this repo (the only recommendation-quality
+result left, RetailRocket ALS, computes Precision@10 natively in Spark
+-- see jobs/als-training/train_als.py). docs/RESEARCH_REPORT.md claims
+these were "hand-verified against known examples before use," but no
+such verification existed anywhere in the repo before this file --
+these are those hand-worked examples, made real.
 """
 import importlib.util
 import math
