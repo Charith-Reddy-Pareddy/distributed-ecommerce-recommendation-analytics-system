@@ -11,6 +11,7 @@ venv/
 pgdata/
 data/retailrocket/*.csv
 data/catalog_reviews.csv
+experiments/recommendation/*.parquet
 spark-warehouse/
 derby.log
 metastore_db/
