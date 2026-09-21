@@ -16,6 +16,7 @@ see split_interactions.py):
 
     python -m experiments.recommendation.offline_models
 """
+import json
 import sys
 import time
 from collections import defaultdict
@@ -27,7 +28,11 @@ REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 from scripts.load_app_module import load_app_module  # noqa: E402
 from experiments.common import record_result  # noqa: E402
+from experiments.recommendation.build_interactions import fetch_asin_to_product_id  # noqa: E402
 from experiments.recommendation.metrics import evaluate  # noqa: E402
+from experiments.recommendation.text_similarity import add_vectors, build_tfidf, cosine  # noqa: E402
+
+CATALOG_PATH = REPO_ROOT / "data" / "amazon_products.json"
 
 RESULTS_DIR = Path(__file__).resolve().parent / "results"
 TOP_K = 10
@@ -100,6 +105,58 @@ def eligible_users(actuals: dict[str, set[int]], engine) -> set[str]:
     return {u for u in actuals if len(engine.user_item.get(u, {})) >= MIN_INTERACTIONS_FOR_EVAL}
 
 
+def load_product_texts(top_items: set[int]) -> dict[int, str]:
+    """category + brand + description for each top-item's real product,
+    joined via the same asin -> product_id mapping build_interactions.py
+    uses (product-service's own `asin` field, not JSON array position).
+    """
+    asin_to_product_id = fetch_asin_to_product_id()
+    product_id_to_asin = {pid: asin for asin, pid in asin_to_product_id.items()}
+    catalog = {p["asin"]: p for p in json.loads(CATALOG_PATH.read_text())}
+
+    texts: dict[int, str] = {}
+    for product_id in top_items:
+        asin = product_id_to_asin.get(product_id)
+        product = catalog.get(asin) if asin else None
+        if product is None:
+            continue
+        texts[product_id] = f"{product['category']} {product['brand']} {product['description']}"
+    return texts
+
+
+def content_based_recommend(interacted: dict[int, float], vectors: dict[int, dict[str, float]], top_n: int = TOP_K) -> list[int]:
+    """One user's recommendations: a TF-IDF profile built from their
+    interacted items (weighted by interaction weight), scored by cosine
+    against every other candidate item's own TF-IDF vector. Pure
+    function of (interacted, vectors) so it's testable without any
+    live service or file I/O -- run_content_based just wires real data
+    into it.
+    """
+    seed_ids = [pid for pid in interacted if pid in vectors]
+    if not seed_ids:
+        return []
+    profile = add_vectors([vectors[pid] for pid in seed_ids], [interacted[pid] for pid in seed_ids])
+    scored = sorted(
+        ((pid, cosine(profile, vec)) for pid, vec in vectors.items() if pid not in interacted),
+        key=lambda kv: kv[1],
+        reverse=True,
+    )
+    return [pid for pid, score in scored[:top_n] if score > 0]
+
+
+def run_content_based(engine, actuals: dict[str, set[int]], users: set[str], top_items: set[int]) -> tuple[dict, float]:
+    texts = load_product_texts(top_items)
+    vectors = build_tfidf(texts)
+
+    recs = {}
+    start = time.perf_counter()
+    for u in users:
+        recs[u] = content_based_recommend(engine.user_item.get(u, {}), vectors, TOP_K)
+    latency_ms = (time.perf_counter() - start) * 1000 / max(len(users), 1)
+    result = evaluate(recs, {u: actuals[u] for u in users}, k=TOP_K)
+    return result, latency_ms
+
+
 def run_popularity(engine, actuals: dict[str, set[int]], users: set[str]) -> tuple[dict, float]:
     popular = engine.popular_items(top_n=TOP_K)
     ranked = [pid for pid, _score in popular]
@@ -131,7 +188,13 @@ def main() -> None:
     engine, top_items = build_cf_engine(train_rows)
     print(f"Engine built on top {len(top_items)} most-interacted-with items", flush=True)
     actuals = build_actuals(test_rows)
-    users = list(eligible_users(actuals, engine))
+    # sorted(), not list(): a set's iteration order is hash-randomized
+    # per Python process for str keys (user ids), so sampling from
+    # list(a_set) with a fixed random.Random seed still picked a
+    # different sample every run -- sorting first makes the input
+    # sequence itself deterministic, which is what actually makes the
+    # seeded sample reproducible.
+    users = sorted(eligible_users(actuals, engine))
     print(f"{len(users)} users eligible (>={MIN_INTERACTIONS_FOR_EVAL} interactions within top items)", flush=True)
     if len(users) > MAX_USERS:
         users = random.Random(SAMPLE_SEED).sample(users, MAX_USERS)
@@ -139,8 +202,13 @@ def main() -> None:
     print(f"Evaluating on a sample of {len(users)} users", flush=True)
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    for name, run_fn in [("popularity", run_popularity), ("item_cf", run_item_cf)]:
-        result, latency_ms = run_fn(engine, actuals, users)
+    runs = [
+        ("popularity", lambda: run_popularity(engine, actuals, users)),
+        ("item_cf", lambda: run_item_cf(engine, actuals, users)),
+        ("content_based", lambda: run_content_based(engine, actuals, users, top_items)),
+    ]
+    for name, run_fn in runs:
+        result, latency_ms = run_fn()
         result["latency_ms_per_request"] = latency_ms
         print(f"{name}: {result}", flush=True)
         record_result(
