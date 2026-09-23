@@ -1,2 +1,3 @@
 pyarrow==21.0.0
-setuptools
+pyspark==3.5.3
+setuptools<81
