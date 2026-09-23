@@ -1,4 +1,4 @@
-from experiments.recommendation.offline_models import build_actuals, eligible_users
+from experiments.recommendation.offline_models import build_actuals, content_based_recommend, eligible_users
 
 
 class FakeEngine:
@@ -22,3 +22,20 @@ def test_eligible_users_excludes_users_engine_has_never_seen():
     actuals = {"u1": {1}, "u3": {5}}
     engine = FakeEngine({"u1": {i: 1.0 for i in range(5)}})
     assert eligible_users(actuals, engine) == {"u1"}
+
+
+def test_content_based_recommend_excludes_already_interacted_items():
+    vectors = {1: {"a": 1.0}, 2: {"a": 1.0}, 3: {"b": 1.0}}
+    recs = content_based_recommend({1: 5.0}, vectors, top_n=10)
+    assert 1 not in recs
+    assert recs == [2]  # shares term "a" with the profile; item 3 shares nothing, scores 0
+
+
+def test_content_based_recommend_empty_when_no_seed_items_have_vectors():
+    assert content_based_recommend({99: 5.0}, {1: {"a": 1.0}}, top_n=10) == []
+
+
+def test_content_based_recommend_respects_top_n():
+    vectors = {i: {"a": 1.0} for i in range(20)}
+    recs = content_based_recommend({0: 5.0}, vectors, top_n=5)
+    assert len(recs) == 5
