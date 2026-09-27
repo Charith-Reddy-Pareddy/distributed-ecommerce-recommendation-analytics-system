@@ -83,4 +83,54 @@ fix.
   4,354 eligible; no bootstrap CI yet on these specific numbers (the
   machinery exists and is tested -- `bootstrap.py` -- just not wired to
   this comparison).
-- **ALS and the hybrid** haven't been built on this real data yet.
+- **The hybrid** hasn't been built on this real data yet.
+
+## ALS, added later: real, full-scale, but not yet a fair comparison
+
+`train_catalog_als.py` trains Spark MLlib ALS on the same real
+interactions, sharing the live catalog's product ids (unlike
+`jobs/als-training/`'s RetailRocket job). Unlike the popularity/item-CF/
+content-based comparison above, ALS's matrix factorization doesn't have
+the pairwise-cosine cost problem, so this ran on the **full** catalog
+and the **full** eligible test set, not a bounded sample:
+
+| Model | Precision@10 | Users evaluated | Item pool |
+|---|---|---|---|
+| ALS (production-scale) | 0.0045 | 225,873 | full ~7,675 |
+| Item-CF (bounded sample, above) | 0.0260 | 150 | top 150 |
+
+**These two numbers are not a fair head-to-head yet** -- ALS was
+evaluated against every real item in the catalog (including thousands
+of long-tail items with little signal), while item-CF was only
+evaluated against the 150 *most*-interacted-with items, which is
+inherently an easier target. The honest comparison needs both models
+run at the same scope; that's real follow-up work, not assumed to
+favor either model as things stand.
+
+Three real bugs surfaced and got fixed getting this to run at all,
+each a genuine first-encounter (this project's only prior ALS job
+always ran inside Docker with a different Python version, never
+locally, and never against a real id space this dense):
+
+1. **`pyspark.ml` doesn't import on Python 3.12** -- `distutils` was
+   removed from the stdlib entirely, and setuptools' own shim
+   (`distutils-precedence.pth`) wasn't actually firing at interpreter
+   startup in this environment. Fixed by explicitly invoking
+   `_distutils_hack.add_shim()` in the script itself, rather than
+   depending on that ambient behavior (which had already silently
+   stopped working once between two sessions with no code change).
+2. **Kryo buffer overflow building the user-id index** -- ~1.6M
+   distinct real reviewer ids is a much bigger string-indexing job than
+   this project's only other precedent (RetailRocket's `visitorid` is
+   already numeric, never indexed at all). Fixed with
+   `spark.kryoserializer.buffer.max=512m`.
+3. **Driver OOM inside `ALS.fit()`** -- default local-mode heap (1g)
+   wasn't enough for this real, dense interaction graph. Fixed with
+   `spark.driver.memory=6g`.
+4. **`precision_at_k` grouped by the wrong column** -- a real code bug,
+   not an environment one: ALS is trained on a `StringIndexer`-derived
+   `user_id_idx` column (string user ids need indexing; RetailRocket's
+   job never needed this), but `precision_at_k` still grouped by
+   `user_id`, which `recommendForUserSubset` doesn't recognize.
+   Parameterized the function on `user_col` and added a regression
+   test that exercises exactly this mismatch.
