@@ -19,6 +19,22 @@ Usage:
 """
 from pathlib import Path
 
+# setuptools' own distutils-precedence.pth is supposed to shim `distutils`
+# back in automatically on Python 3.12 (which removed it from the stdlib)
+# -- but that .pth hook isn't actually firing at interpreter startup in
+# this environment (confirmed: `import distutils` fails standalone, but
+# calling add_shim() first makes it work), so pyspark.ml's own
+# `from distutils.version import LooseVersion` fails before this even
+# gets a chance to matter. Invoking the shim explicitly here, before any
+# pyspark.ml import, doesn't depend on that fragile ambient .pth
+# processing working correctly.
+try:
+    import _distutils_hack
+
+    _distutils_hack.add_shim()
+except ImportError:
+    pass
+
 from pyspark.sql import SparkSession, Window
 from pyspark.sql.functions import array_intersect, col, collect_set, row_number, size
 
