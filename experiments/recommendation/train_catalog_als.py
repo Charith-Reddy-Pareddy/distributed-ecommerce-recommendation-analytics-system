@@ -49,26 +49,34 @@ REG_PARAM = 0.1
 ALPHA = 1.0
 
 
-def precision_at_k(model, train_df, test_df, k: int = TOP_K):
-    test_users = test_df.select("user_id").distinct()
+def precision_at_k(model, train_df, test_df, k: int = TOP_K, user_col: str = "user_id"):
+    """user_col defaults to "user_id" (RetailRocket's visitorid-equivalent
+    case, already numeric, no indexing needed -- and what the FakeModel
+    unit tests in tests/test_train_catalog_als.py exercise). This
+    project's real reviewer ids are strings, so main() trains ALS on a
+    StringIndexer-derived "user_id_idx" column instead and must pass
+    that column name here too -- recommendForUserSubset only knows
+    about whatever column the model itself was actually fit on.
+    """
+    test_users = test_df.select(user_col).distinct()
 
     raw_recs = model.recommendForUserSubset(test_users, k * 3)
-    exploded = raw_recs.selectExpr("user_id", "explode(recommendations) as rec").select(
-        "user_id", col("rec.product_id").alias("product_id"), col("rec.rating").alias("score")
+    exploded = raw_recs.selectExpr(user_col, "explode(recommendations) as rec").select(
+        user_col, col("rec.product_id").alias("product_id"), col("rec.rating").alias("score")
     )
 
-    train_pairs = train_df.select("user_id", "product_id")
-    unseen_recs = exploded.join(train_pairs, on=["user_id", "product_id"], how="left_anti")
+    train_pairs = train_df.select(user_col, "product_id")
+    unseen_recs = exploded.join(train_pairs, on=[user_col, "product_id"], how="left_anti")
 
     ranked = unseen_recs.withColumn(
-        "rank", row_number().over(Window.partitionBy("user_id").orderBy(col("score").desc()))
+        "rank", row_number().over(Window.partitionBy(user_col).orderBy(col("score").desc()))
     )
-    top_k_recs = ranked.filter(col("rank") <= k).groupBy("user_id").agg(
+    top_k_recs = ranked.filter(col("rank") <= k).groupBy(user_col).agg(
         collect_set("product_id").alias("recommended_items")
     )
 
-    actual = test_df.groupBy("user_id").agg(collect_set("product_id").alias("actual_items"))
-    joined = top_k_recs.join(actual, on="user_id", how="inner")
+    actual = test_df.groupBy(user_col).agg(collect_set("product_id").alias("actual_items"))
+    joined = top_k_recs.join(actual, on=user_col, how="inner")
 
     scored = joined.withColumn(
         "hits", size(array_intersect(col("recommended_items"), col("actual_items")))
@@ -81,7 +89,22 @@ def precision_at_k(model, train_df, test_df, k: int = TOP_K):
 
 
 def main() -> None:
-    spark = SparkSession.builder.appName("catalog-als-training").master("local[*]").getOrCreate()
+    spark = (
+        SparkSession.builder.appName("catalog-als-training")
+        .master("local[*]")
+        # Default Kryo buffer (64MB) overflows building the StringIndexer's
+        # user_id lookup -- ~1.6M distinct real reviewer ids, a much larger
+        # user space than this project's jobs/als-training/ (RetailRocket)
+        # job ever indexed as a string (RetailRocket's visitorid is already
+        # numeric, no StringIndexer needed there at all).
+        .config("spark.kryoserializer.buffer.max", "512m")
+        # Default local-mode driver heap (1g) OOM'd during ALS.fit() on the
+        # same real, dense interaction graph the CF scalability work
+        # already found expensive -- same underlying cause (this dataset's
+        # real density, not a code bug), different subsystem hitting it.
+        .config("spark.driver.memory", "6g")
+        .getOrCreate()
+    )
     spark.sparkContext.setLogLevel("WARN")
 
     train_df = spark.read.parquet(str(DATA_DIR / "interactions_train.parquet"))
@@ -118,7 +141,7 @@ def main() -> None:
     model = als.fit(train_indexed)
     print("[ALS] Training complete.", flush=True)
 
-    precision, evaluated_users = precision_at_k(model, train_indexed, test_indexed, TOP_K)
+    precision, evaluated_users = precision_at_k(model, train_indexed, test_indexed, TOP_K, user_col="user_id_idx")
     print(f"[ALS] Precision@{TOP_K} = {precision:.4f} (evaluated on {evaluated_users} users)", flush=True)
 
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
