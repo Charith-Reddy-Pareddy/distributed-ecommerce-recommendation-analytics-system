@@ -180,16 +180,17 @@ class RecommendationEngine:
                 candidate_scores[similar_id] += sim_score * weight
 
         if not candidate_scores:
-            return self.popular_items(top_n)
+            return self.popular_items(top_n, exclude=set(interacted))
 
         ranked = sorted(candidate_scores.items(), key=lambda x: x[1], reverse=True)
         return ranked[:top_n]
 
-    def popular_items(self, top_n: int = 10) -> list[tuple[int, float]]:
+    def popular_items(self, top_n: int = 10, exclude: set[int] | None = None) -> list[tuple[int, float]]:
         with self._lock:
             totals = [
                 (product_id, sum(users.values()))
                 for product_id, users in self.item_users.items()
+                if product_id not in (exclude or set())
             ]
         totals.sort(key=lambda x: x[1], reverse=True)
         return totals[:top_n]

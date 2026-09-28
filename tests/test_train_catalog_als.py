@@ -86,3 +86,19 @@ def test_precision_at_k_uses_the_column_the_model_was_actually_trained_on(spark)
     precision, n_users = precision_at_k(model, train_df, test_df, k=1, user_col="user_id_idx")
     assert precision == 1.0
     assert n_users == 1
+
+
+def test_precision_includes_users_with_no_unseen_recommendations(spark):
+    train = spark.createDataFrame([(1, 10), (2, 20)], ["user_id", "product_id"])
+    test = spark.createDataFrame([(1, 11), (2, 21)], ["user_id", "product_id"])
+    model = FakeModel(spark, {1: [11], 2: [20]})
+    precision, n_users = precision_at_k(model, train, test, k=1)
+    assert n_users == 2
+    assert precision == 0.5
+
+
+def test_precision_all_empty_recommendations_returns_zero(spark):
+    train = spark.createDataFrame([(1, 10)], ["user_id", "product_id"])
+    test = spark.createDataFrame([(1, 11)], ["user_id", "product_id"])
+    precision, n_users = precision_at_k(FakeModel(spark, {1: [10]}), train, test, k=1)
+    assert (precision, n_users) == (0.0, 1)

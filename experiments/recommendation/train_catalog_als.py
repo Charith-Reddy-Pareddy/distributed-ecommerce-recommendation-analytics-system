@@ -36,7 +36,7 @@ except ImportError:
     pass
 
 from pyspark.sql import SparkSession, Window
-from pyspark.sql.functions import array_intersect, col, collect_set, row_number, size
+from pyspark.sql.functions import array_intersect, col, collect_set, lit, row_number, size, when
 
 from experiments.common import record_result
 
@@ -76,16 +76,18 @@ def precision_at_k(model, train_df, test_df, k: int = TOP_K, user_col: str = "us
     )
 
     actual = test_df.groupBy(user_col).agg(collect_set("product_id").alias("actual_items"))
-    joined = top_k_recs.join(actual, on=user_col, how="inner")
+    joined = actual.join(top_k_recs, on=user_col, how="left")
 
     scored = joined.withColumn(
-        "hits", size(array_intersect(col("recommended_items"), col("actual_items")))
+        "hits", when(col("recommended_items").isNull(), lit(0)).otherwise(
+            size(array_intersect(col("recommended_items"), col("actual_items")))
+        )
     )
     scored = scored.withColumn("precision", col("hits") / k)
 
     result = scored.agg({"precision": "avg"}).collect()[0][0]
     evaluated_users = scored.count()
-    return result, evaluated_users
+    return (result if result is not None else 0.0), evaluated_users
 
 
 def main() -> None:
