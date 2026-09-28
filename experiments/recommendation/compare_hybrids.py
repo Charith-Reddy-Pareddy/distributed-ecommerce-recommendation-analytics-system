@@ -16,7 +16,6 @@ from experiments.common import record_result
 from experiments.recommendation.evaluation_scope import build_scope
 from experiments.recommendation.hybrid import blend_scores, rank_scores
 from experiments.recommendation.metrics import evaluate
-from experiments.recommendation.offline_models import load_rows
 from experiments.recommendation.text_similarity import add_vectors, build_tfidf, cosine
 from scripts.load_app_module import load_app_module
 
@@ -54,7 +53,7 @@ def als_scores(scope, rank=10, iterations=10, seed=42):
     from experiments.recommendation import train_catalog_als  # noqa: F401
     from pyspark.ml.recommendation import ALS
     from pyspark.sql import SparkSession
-    from pyspark.sql.functions import col, sum as spark_sum
+    from pyspark.sql.functions import sum as spark_sum
     spark = (SparkSession.builder.master('local[2]').appName('matched-hybrids')
              .config('spark.driver.memory', '4g')
              .config('spark.sql.shuffle.partitions', '8').getOrCreate())
