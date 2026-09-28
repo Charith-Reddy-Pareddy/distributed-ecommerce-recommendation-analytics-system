@@ -156,12 +156,13 @@ class RecommendationEngine:
             except Exception as e:
                 print(f"[recommendation-engine] neighbor cache refresh failed: {e!r}", flush=True)
 
-    def recommend_for_user(self, user_id: int, top_n: int = 10) -> list[tuple[int, float]]:
+    def scores_for_user(self, user_id: int) -> dict[int, float]:
+        """Untruncated candidate scores for ranking and offline score fusion."""
         with self._lock:
             interacted = dict(self.user_item.get(user_id, {}))
 
         if not interacted:
-            return self.popular_items(top_n)
+            return dict(self.popular_items(len(self.item_users)))
 
         candidate_scores: dict[int, float] = defaultdict(float)
         for product_id, weight in interacted.items():
@@ -180,10 +181,13 @@ class RecommendationEngine:
                 candidate_scores[similar_id] += sim_score * weight
 
         if not candidate_scores:
-            return self.popular_items(top_n, exclude=set(interacted))
+            return dict(self.popular_items(len(self.item_users), exclude=set(interacted)))
 
-        ranked = sorted(candidate_scores.items(), key=lambda x: x[1], reverse=True)
-        return ranked[:top_n]
+        return dict(candidate_scores)
+
+    def recommend_for_user(self, user_id: int, top_n: int = 10) -> list[tuple[int, float]]:
+        scores = self.scores_for_user(user_id)
+        return sorted(scores.items(), key=lambda pair: (-pair[1], pair[0]))[:top_n]
 
     def popular_items(self, top_n: int = 10, exclude: set[int] | None = None) -> list[tuple[int, float]]:
         with self._lock:
