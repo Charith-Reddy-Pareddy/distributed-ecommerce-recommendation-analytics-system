@@ -15,8 +15,9 @@ import pyarrow.parquet as pq
 from experiments.common import record_result
 from experiments.recommendation.evaluation_scope import build_scope
 from experiments.recommendation.hybrid import blend_scores, rank_scores
-from experiments.recommendation.metrics import evaluate
+from experiments.recommendation.metrics import evaluate, evaluate_per_user
 from experiments.recommendation.text_similarity import add_vectors, build_tfidf, cosine
+from experiments.recommendation.uncertainty import summarize_user_metrics
 from scripts.load_app_module import load_app_module
 
 
@@ -80,7 +81,8 @@ def als_scores(scope, rank=10, iterations=10, seed=42):
         spark.stop()
 
 
-def compare(scope, products, alphas=(0., .25, .5, .75, 1.), k=10, seed=42):
+def compare(scope, products, alphas=(0., .25, .5, .75, 1.), k=10, seed=42,
+            bootstrap_resamples=5000, confidence_level=.95):
     missing = set(scope.items) - set(products)
     if missing:
         raise ValueError(f'Missing product text for {len(missing)} candidate items')
@@ -108,14 +110,19 @@ def compare(scope, products, alphas=(0., .25, .5, .75, 1.), k=10, seed=42):
                 u: blend_scores(scores['item_cf'][u], scores[other][u], alpha, scope.items, scope.seen[u])
                 for u in scope.users}
     results = {}
+    per_user_metrics = {}
     for name, by_user in scores.items():
         recs = {u: rank_scores(s, k) for u, s in by_user.items()}
         for u, ranked in recs.items():
             if set(ranked) & scope.seen[u] or not set(ranked) <= set(scope.items):
                 raise ValueError(f'{name} violated the candidate/exclusion contract')
+        per_user_metrics[name] = evaluate_per_user(recs, scope.actuals, k)
         results[name] = evaluate(recs, scope.actuals, k)
         results[name]['recommendation_coverage'] = sum(bool(v) for v in recs.values()) / len(scope.users)
-    return results, {'cf_cache_build_seconds': cache_seconds, 'als_fit_and_score_seconds': als_seconds}
+    uncertainty = summarize_user_metrics(per_user_metrics, 'item_cf',
+                                         n_resamples=bootstrap_resamples,
+                                         ci=confidence_level, seed=seed)
+    return results, {'cf_cache_build_seconds': cache_seconds, 'als_fit_and_score_seconds': als_seconds}, uncertainty
 
 
 def main():
@@ -126,6 +133,8 @@ def main():
     parser.add_argument('--max-items', type=int, default=150)
     parser.add_argument('--max-users', type=int, default=150)
     parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--bootstrap-resamples', type=int, default=5000)
+    parser.add_argument('--confidence-level', type=float, default=.95)
     parser.add_argument('--output-dir', type=Path, default=Path(__file__).resolve().parent / 'results')
     args = parser.parse_args()
     scope = load_scope(args.data_dir, args.max_items, args.max_users, args.seed)
@@ -133,8 +142,11 @@ def main():
     products = {p['id']: f"{p['category']} {p.get('specifications', {}).get('brand', '')} {p['description']}"
                 for p in catalog}
     print(f'Matched scope: {len(scope.items)} items, {len(scope.users)} users, {len(scope.train)} train rows', flush=True)
-    results, timings = compare(scope, products, seed=args.seed)
+    results, timings, uncertainty = compare(scope, products, seed=args.seed,
+                                           bootstrap_resamples=args.bootstrap_resamples,
+                                           confidence_level=args.confidence_level)
     config = {'max_items': args.max_items, 'max_users': args.max_users, 'seed': args.seed,
+              'bootstrap_resamples': args.bootstrap_resamples, 'confidence_level': args.confidence_level,
               'k': 10, 'min_train_history': 5, 'split': 'existing random split',
               'candidate_selection': 'top training-frequency items; ties by id',
               'heldout_scope': 'unseen candidate items only', 'alphas': [0, .25, .5, .75, 1],
@@ -145,7 +157,7 @@ def main():
               'test_sha256': fingerprint(args.data_dir / 'interactions_test.parquet'),
               'catalog_snapshot_sha256': fingerprint(args.catalog_snapshot)}
     result = {'n_items': len(scope.items), 'n_users': len(scope.users), 'n_train_rows': len(scope.train),
-              'models': results, 'timings': timings}
+              'models': results, 'uncertainty': uncertainty, 'timings': timings}
     record_result(args.output_dir, 'matched_hybrids', config,
                   'Real Amazon review interactions, bounded shared candidate/user scope',
                   'popularity,item_cf,content,als,cf_als,cf_content', 'precision,recall,map,ndcg,coverage', result)
