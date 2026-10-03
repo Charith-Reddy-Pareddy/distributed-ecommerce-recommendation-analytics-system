@@ -16,8 +16,8 @@ def test_weight_ablation_uses_same_user_scope_and_raw_reference(monkeypatch):
     monkeypatch.setattr('experiments.recommendation.weighting_ablation._cf_scores', fake_scores)
     monkeypatch.setattr('experiments.recommendation.weighting_ablation.als_scores',
                         lambda weighted_scope, seed: fake_scores(weighted_scope))
-    result, _ = run_ablation(scope, schemes=('binary', 'linear'), n_resamples=50)
+    result, _ = run_ablation(scope, schemes=('binary', 'raw'), n_resamples=50)
     for family in ('item_cf', 'als'):
-        assert result[family]['metrics']['linear']['n_users'] == 3
+        assert result[family]['metrics']['raw']['n_users'] == 3
         assert result[family]['uncertainty']['n_users'] == 3
-        assert result[family]['uncertainty']['paired_differences_vs_reference']['binary']['precision']['reference'] == 'linear'
+        assert result[family]['uncertainty']['paired_differences_vs_reference']['binary']['precision']['reference'] == 'raw'

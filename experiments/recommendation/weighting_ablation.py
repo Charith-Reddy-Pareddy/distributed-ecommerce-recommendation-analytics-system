@@ -1,11 +1,15 @@
 """Real-review confidence-weight ablation on a fixed matched evaluation scope."""
 import argparse
+import time
 from dataclasses import replace
 from pathlib import Path
-import time
 
 from experiments.common import record_result
-from experiments.recommendation.compare_hybrids import als_scores, fingerprint, load_scope
+from experiments.recommendation.compare_hybrids import (
+    als_scores,
+    fingerprint,
+    load_scope,
+)
 from experiments.recommendation.hybrid import rank_scores
 from experiments.recommendation.metrics import evaluate_per_user
 from experiments.recommendation.uncertainty import summarize_user_metrics
@@ -32,8 +36,8 @@ def _user_metrics(scores, scope, k=10):
 
 
 def run_ablation(scope, schemes=WEIGHTING_SCHEMES, n_resamples=5000, ci=.95, seed=42):
-    if 'linear' not in schemes:
-        raise ValueError("schemes must include 'linear' as the reference")
+    if 'raw' not in schemes:
+        raise ValueError("schemes must include 'raw' as the reference")
     if len(set(schemes)) != len(schemes):
         raise ValueError('schemes must be unique')
     cf_users, als_users, timings = {}, {}, {}
@@ -53,7 +57,7 @@ def run_ablation(scope, schemes=WEIGHTING_SCHEMES, n_resamples=5000, ci=.95, see
                              for metric in ('precision', 'recall', 'map', 'ndcg')}
             means[scheme]['n_users'] = len(users)
         results[family] = {'metrics': means,
-                           'uncertainty': summarize_user_metrics(per_model, 'linear',
+                           'uncertainty': summarize_user_metrics(per_model, 'raw',
                                n_resamples=n_resamples, ci=ci, seed=seed)}
     return results, timings
 
@@ -73,8 +77,8 @@ def main():
                                     ci=args.confidence_level, seed=args.seed)
     config = {'max_items': args.max_items, 'max_users': args.max_users, 'seed': args.seed,
               'k': 10, 'weighting_schemes': {
-                  'binary': '1', 'linear': 'rating', 'squared': 'rating^2',
-                  'exponential': '2^(rating-1)'},
+                  'raw': 'rating', 'binary': '1 if rating >= 4 else 0',
+                  'squared': 'rating^2', 'uniform': '1'},
               'candidate_selection': 'top training-frequency items before transformation',
               'split': 'existing random split; held-out relevance is unchanged',
               'n_resamples': args.bootstrap_resamples, 'confidence_level': args.confidence_level,
