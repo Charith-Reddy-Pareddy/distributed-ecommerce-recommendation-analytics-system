@@ -1,4 +1,4 @@
-"""Real-review confidence-weight ablation on the fixed Day B scope."""
+"""Real-review confidence-weight ablation on a fixed matched evaluation scope."""
 import argparse
 from dataclasses import replace
 from pathlib import Path
@@ -83,7 +83,7 @@ def main():
     result = {'n_items': len(scope.items), 'n_users': len(scope.users),
               'n_train_rows': len(scope.train), 'families': results, 'timings': timings}
     record_result(args.output_dir, 'weighting_ablation', config,
-                  'Real Amazon review interactions, fixed Day B candidate and user scope',
+                  'Real Amazon review interactions, fixed candidate and user scope',
                   'item_cf,implicit_als', 'precision,recall,map,ndcg', result)
     import json
     print(json.dumps(result, indent=2))
