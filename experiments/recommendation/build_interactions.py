@@ -24,17 +24,22 @@ interaction that already happened, and rescaling it onto a funnel
 metaphor it doesn't fit would be an arbitrary transform dressed up as
 a methodology choice. Using the raw rating as confidence, following
 the same "explicit rating as implicit confidence" framing Hu-Koren-
-Volinsky's own ALS formulation supports, is the simplest defensible
-default -- and the one RQ1's ablation (binary / squared / exponential
-alternatives) will be measured against, not assumed to be optimal.
+Volinsky's own ALS formulation supports, is the reference for the
+matched raw / binary / squared / uniform ablation.
 
-Usage (needs the live stack up and seeded, and
-scripts/fetch_amazon_reviews.py already run):
+The ASIN mapping is archived in `data/asin_product_id_map.json`, and
+the recommendation metadata snapshot is archived in
+`data/recommendation_catalog_snapshot.json`. To refresh the mapping from
+the live catalog, pass `--refresh-mapping` explicitly.
+
+Usage (after scripts/fetch_amazon_reviews.py has run):
 
     pip install pyarrow requests
     python -m experiments.recommendation.build_interactions
 """
+import argparse
 import csv
+import json
 from pathlib import Path
 
 import pyarrow as pa
@@ -44,6 +49,7 @@ import requests
 PRODUCT_SERVICE_URL = "http://localhost:8001"
 CATALOG_REVIEWS_PATH = Path(__file__).resolve().parent.parent.parent / "data" / "catalog_reviews.csv"
 OUTPUT_PATH = Path(__file__).resolve().parent / "interactions.parquet"
+MAPPING_PATH = Path(__file__).resolve().parents[2] / "data" / "asin_product_id_map.json"
 
 
 def fetch_asin_to_product_id(product_service_url: str = PRODUCT_SERVICE_URL) -> dict[str, int]:
@@ -88,6 +94,36 @@ def build_interactions(
     return rows
 
 
+def write_asin_product_id_map(mapping: dict[str, int], output_path: Path = MAPPING_PATH) -> None:
+    """Persist the exact catalog join as a sorted, reviewable JSON object."""
+    if not mapping:
+        raise ValueError("mapping must not be empty")
+    if any(not isinstance(asin, str) or not asin for asin in mapping):
+        raise ValueError("mapping keys must be non-empty ASIN strings")
+    if any(isinstance(product_id, bool) or not isinstance(product_id, int) or product_id <= 0
+           for product_id in mapping.values()):
+        raise ValueError("product IDs must be positive integers")
+    if len(set(mapping.values())) != len(mapping):
+        raise ValueError("product IDs must be unique")
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(json.dumps(dict(sorted(mapping.items())), indent=2) + "\n")
+
+
+def load_asin_product_id_map(mapping_path: Path = MAPPING_PATH) -> dict[str, int]:
+    """Load and validate an archived ASIN-to-product-ID mapping."""
+    data = json.loads(mapping_path.read_text())
+    if not isinstance(data, dict) or not data:
+        raise ValueError("mapping file must contain an ASIN-to-product-ID object")
+    if any(not isinstance(asin, str) or not asin for asin in data):
+        raise ValueError("mapping keys must be non-empty ASIN strings")
+    if any(isinstance(product_id, bool) or not isinstance(product_id, int) or product_id <= 0
+           for product_id in data.values()):
+        raise ValueError("product IDs must be positive integers")
+    if len(set(data.values())) != len(data):
+        raise ValueError("product IDs must be unique")
+    return data
+
+
 def write_parquet(rows: list[tuple[str, int, float, int]], output_path: Path = OUTPUT_PATH) -> None:
     table = pa.table(
         {
@@ -102,9 +138,18 @@ def write_parquet(rows: list[tuple[str, int, float, int]], output_path: Path = O
 
 
 def main() -> None:
-    print("Fetching asin -> product_id mapping from the live catalog...", flush=True)
-    asin_to_product_id = fetch_asin_to_product_id()
-    print(f"  {len(asin_to_product_id)} products in the live catalog")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--mapping-file", type=Path, default=MAPPING_PATH)
+    parser.add_argument("--refresh-mapping", action="store_true",
+                        help="fetch the current live catalog and replace the archived mapping")
+    args = parser.parse_args()
+    if args.refresh_mapping:
+        print("Fetching asin -> product_id mapping from the live catalog...", flush=True)
+        asin_to_product_id = fetch_asin_to_product_id()
+        write_asin_product_id_map(asin_to_product_id, args.mapping_file)
+    else:
+        asin_to_product_id = load_asin_product_id_map(args.mapping_file)
+    print(f"  {len(asin_to_product_id)} ASINs in mapping {args.mapping_file}")
 
     print(f"Joining {CATALOG_REVIEWS_PATH.name} against it...", flush=True)
     rows = build_interactions(asin_to_product_id)

@@ -4,11 +4,11 @@ All models train on the same top-N items selected using training frequency.
 The fixed alpha grid is descriptive, not a test-set-tuned production choice.
 """
 import argparse
-from collections import Counter
 import hashlib
 import json
-from pathlib import Path
 import time
+from collections import Counter
+from pathlib import Path
 
 import pyarrow.parquet as pq
 
@@ -19,6 +19,8 @@ from experiments.recommendation.metrics import evaluate, evaluate_per_user
 from experiments.recommendation.text_similarity import add_vectors, build_tfidf, cosine
 from experiments.recommendation.uncertainty import summarize_user_metrics
 from scripts.load_app_module import load_app_module
+
+DEFAULT_CATALOG_SNAPSHOT = Path(__file__).resolve().parents[2] / 'data' / 'recommendation_catalog_snapshot.json'
 
 
 def fingerprint(path):
@@ -51,7 +53,12 @@ def content_scores(interacted, vectors):
 
 def als_scores(scope, rank=10, iterations=10, seed=42):
     # Reuse the project's Python 3.12 compatibility shim before pyspark.ml.
-    from experiments.recommendation import train_catalog_als  # noqa: F401
+    try:
+        import _distutils_hack
+
+        _distutils_hack.add_shim()
+    except ImportError:
+        pass
     from pyspark.ml.recommendation import ALS
     from pyspark.sql import SparkSession
     from pyspark.sql.functions import sum as spark_sum
@@ -128,8 +135,8 @@ def compare(scope, products, alphas=(0., .25, .5, .75, 1.), k=10, seed=42,
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--data-dir', type=Path, default=Path(__file__).resolve().parent)
-    parser.add_argument('--catalog-snapshot', type=Path, required=True,
-                        help='JSON list of product-service records; ids must match the interaction ETL')
+    parser.add_argument('--catalog-snapshot', type=Path, default=DEFAULT_CATALOG_SNAPSHOT,
+                        help='product snapshot from the interaction ETL catalog (defaults to the archived snapshot)')
     parser.add_argument('--max-items', type=int, default=150)
     parser.add_argument('--max-users', type=int, default=150)
     parser.add_argument('--seed', type=int, default=42)

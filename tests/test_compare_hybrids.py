@@ -1,5 +1,10 @@
 import pytest
-from experiments.recommendation.compare_hybrids import compare, content_scores
+
+from experiments.recommendation.compare_hybrids import (
+    DEFAULT_CATALOG_SNAPSHOT,
+    compare,
+    content_scores,
+)
 from experiments.recommendation.evaluation_scope import build_scope
 
 
@@ -28,3 +33,7 @@ def test_comparison_rejects_incomplete_metadata():
     scope = build_scope([('a', 1, 1., 1), ('b', 2, 1., 1)], [('a', 2, 1., 2)], min_history=1)
     with pytest.raises(ValueError, match='Missing product text'):
         compare(scope, {1: 'music'})
+
+
+def test_default_catalog_snapshot_is_archived():
+    assert DEFAULT_CATALOG_SNAPSHOT.is_file()

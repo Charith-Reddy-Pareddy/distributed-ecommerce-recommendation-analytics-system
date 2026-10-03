@@ -75,22 +75,20 @@ not be compared directly with this table.
 Use the existing experiment environment (`experiments/requirements.txt`
 plus the project's test/service dependencies), a compatible Java runtime,
 and the real `interactions_train.parquet` / `interactions_test.parquet`
-files. Supply a JSON array of product-service records captured from the
-same catalog used by the interaction ETL. Do not infer ids from array
-positions or use a newly reseeded catalog's mapping.
+files. The matching catalog metadata and ASIN-to-product-ID mapping are
+archived in `data/recommendation_catalog_snapshot.json` and
+`data/asin_product_id_map.json`. These preserve the product-service IDs
+used by the interaction ETL; do not infer ids from array positions or
+refresh against a different catalog when reproducing this result.
 
 ```bash
 python -m experiments.recommendation.compare_hybrids \
-  --data-dir /path/to/real/interactions \
-  --catalog-snapshot /path/to/catalog-snapshot.json
+  --data-dir /path/to/real/interactions
 ```
 
-The snapshot used for this run is retained locally at
-`/tmp/ecommerce-catalog-snapshot.json`; it is not an immutable archive.
-The result stores fingerprints of the exact train, test, and snapshot
-files, along with the protocol and hyperparameters. Results contain
-aggregate metrics only, with no reviewer identifiers. Input archival
-and a durable mapping artifact are needed for long-term reproduction.
+The result stores fingerprints of the train, test, and snapshot files,
+along with the protocol and hyperparameters. Results contain aggregate
+metrics only, with no reviewer identifiers.
 The script fails if candidate product metadata is missing instead of
 silently dropping candidates from the content comparison.
 
