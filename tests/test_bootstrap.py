@@ -65,3 +65,28 @@ def test_paired_bootstrap_diff_ci_excludes_zero_for_clear_effect():
     diff, lower, upper = paired_bootstrap_diff(better, worse, n_resamples=500, seed=9)
     assert lower > 0
     assert diff > 0.7
+
+
+def test_bootstrap_ci_rejects_nonpositive_resample_count():
+    import pytest
+    with pytest.raises(ValueError, match='n_resamples'):
+        bootstrap_ci([0.2, 0.4], n_resamples=0)
+
+
+def test_bootstrap_ci_rejects_invalid_confidence_level():
+    import pytest
+    with pytest.raises(ValueError, match='ci'):
+        bootstrap_ci([0.2, 0.4], ci=1.0)
+
+
+def test_bootstrap_ci_rejects_nonfinite_values():
+    import math
+    import pytest
+    with pytest.raises(ValueError, match='finite'):
+        bootstrap_ci([0.2, math.nan])
+
+
+def test_paired_bootstrap_rejects_invalid_resample_count():
+    import pytest
+    with pytest.raises(ValueError, match='n_resamples'):
+        paired_bootstrap_diff([0.2], [0.1], n_resamples=0)
