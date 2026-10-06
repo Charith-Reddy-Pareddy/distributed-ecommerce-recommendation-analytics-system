@@ -12,6 +12,7 @@ dependencies = [
     "uvicorn[standard]>=0.30,<1.0",
     "confluent-kafka>=2.13,<3.0",
     "pymongo>=4.13,<5.0",
+    "elasticsearch[async]>=8.17,<9.0",
 ]
 
 [project.optional-dependencies]
