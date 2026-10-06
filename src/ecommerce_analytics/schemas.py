@@ -5,11 +5,8 @@ from enum import Enum
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-class RequestModel(BaseModel):
+class ProductCreate(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
-
-class ProductCreate(RequestModel):
 
     name: str = Field(min_length=1, max_length=200)
     category: str = Field(min_length=1, max_length=100)
@@ -23,7 +20,9 @@ class EventType(str, Enum):
     PURCHASE = "purchase"
 
 
-class EventCreate(RequestModel):
+class EventCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
     user_id: int = Field(gt=0)
     product_id: int = Field(gt=0)
     event_type: EventType
