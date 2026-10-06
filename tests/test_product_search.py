@@ -29,6 +29,7 @@ def test_index_product_uses_product_id_and_keeps_price() -> None:
     assert client.index_call["index"] == "products"
     assert client.index_call["id"] == "7"
     assert client.index_call["document"]["price"] == "24.50"
+    assert client.index_call["refresh"] == "wait_for"
 
 
 def test_search_maps_hits_to_product_models() -> None:

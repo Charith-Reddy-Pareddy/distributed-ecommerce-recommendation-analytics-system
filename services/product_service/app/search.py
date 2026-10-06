@@ -21,6 +21,7 @@ class ElasticsearchProductIndex:
             index=self._index,
             id=str(product.id),
             document=product.model_dump(mode="json"),
+            refresh="wait_for",
         )
 
     async def search(self, query: str, skip: int = 0, limit: int = 20) -> list[ProductOut]:
