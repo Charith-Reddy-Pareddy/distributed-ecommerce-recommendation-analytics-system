@@ -7,4 +7,4 @@ def test_health_endpoint_reports_service_ready() -> None:
     response = TestClient(app).get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json() == {"status": "ok", "service": "event-service"}

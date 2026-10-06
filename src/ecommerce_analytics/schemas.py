@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 from enum import Enum
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -34,3 +35,12 @@ class EventCreate(BaseModel):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("occurred_at must include a timezone")
         return value
+
+
+class EventRecord(BaseModel):
+    id: UUID
+    user_id: int
+    product_id: int
+    event_type: EventType
+    occurred_at: datetime
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
