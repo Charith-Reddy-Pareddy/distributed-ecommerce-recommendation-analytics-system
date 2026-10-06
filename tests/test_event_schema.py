@@ -6,28 +6,28 @@ from pydantic import ValidationError
 from ecommerce_analytics.schemas import EventCreate, EventType
 
 
-@pytest.mark.parametrize("event_type", list(EventType))
-def test_event_input_accepts_supported_types(event_type: EventType) -> None:
-    event = EventCreate(user_id=1, product_id=2, event_type=event_type)
+@pytest.mark.parametrize("kind", list(EventType))
+def test_event_input_accepts_supported_types(kind: EventType) -> None:
+    evt = EventCreate(user_id=1, product_id=2, event_type=kind)
 
-    assert event.event_type is event_type
-    assert event.occurred_at.tzinfo is not None
+    assert evt.event_type is kind
+    assert evt.occurred_at.tzinfo is not None
 
 
 def test_event_input_accepts_timezone_aware_timestamp() -> None:
-    occurred_at = datetime(2026, 1, 2, 3, 4, tzinfo=timezone.utc)
-    event = EventCreate(
+    ts = datetime(2026, 1, 2, 3, 4, tzinfo=timezone.utc)
+    evt = EventCreate(
         user_id=1,
         product_id=2,
         event_type="purchase",
-        occurred_at=occurred_at,
+        occurred_at=ts,
     )
 
-    assert event.occurred_at == occurred_at
+    assert evt.occurred_at == ts
 
 
 @pytest.mark.parametrize(
-    "payload",
+    "data",
     [
         {"user_id": 0, "product_id": 2, "event_type": "view"},
         {"user_id": 1, "product_id": -1, "event_type": "view"},
@@ -41,6 +41,6 @@ def test_event_input_accepts_timezone_aware_timestamp() -> None:
         {"user_id": 1, "product_id": 2, "event_type": "view", "extra": "value"},
     ],
 )
-def test_event_input_rejects_invalid_values(payload: dict[str, object]) -> None:
+def test_event_input_rejects_invalid_values(data: dict[str, object]) -> None:
     with pytest.raises(ValidationError):
-        EventCreate.model_validate(payload)
+        EventCreate.model_validate(data)
