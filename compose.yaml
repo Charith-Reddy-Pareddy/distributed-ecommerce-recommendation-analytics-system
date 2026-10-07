@@ -28,6 +28,24 @@ services:
       retries: 20
       start_period: 40s
 
+  cassandra:
+    image: cassandra:5.0
+    environment:
+      CASSANDRA_CLUSTER_NAME: ecommerce
+      CASSANDRA_DC: datacenter1
+      CASSANDRA_RACK: rack1
+      CASSANDRA_ENDPOINT_SNITCH: GossipingPropertyFileSnitch
+    ports:
+      - "9042:9042"
+    volumes:
+      - cassandra-data:/var/lib/cassandra
+    healthcheck:
+      test: ["CMD-SHELL", "cqlsh -e 'DESCRIBE KEYSPACES' >/dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+
   kafka:
     image: apache/kafka:3.8.1
     environment:
@@ -56,7 +74,7 @@ services:
       start_period: 30s
 
 volumes:
+  cassandra-data:
   kafka-data:
-
   mongo-data:
   elasticsearch-data:
