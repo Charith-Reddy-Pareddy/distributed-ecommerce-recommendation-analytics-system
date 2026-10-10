@@ -87,6 +87,7 @@ class KafkaEventConsumer:
 
         self._store.store(rec)
         self._consumer.commit(message=msg, asynchronous=False)
+        logger.info("Processed event id=%s type=%s", rec.id, rec.event_type.value)
         return True
 
     def run(self) -> None:
