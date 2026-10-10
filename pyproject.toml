@@ -18,9 +18,10 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "httpx2>=2.0,<3.0",
+    "httpx>=0.27,<1.0",
     "pytest>=8,<10",
 ]
+als = ["numpy>=1.21,<3", "pyspark>=4.0,<5"]
 
 [project.scripts]
 recommendation-api = "ecommerce_analytics.recommendation_api:main"
