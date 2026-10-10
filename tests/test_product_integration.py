@@ -12,7 +12,12 @@ from pymongo import AsyncMongoClient
 from services.product_service.app.main import app
 
 
-pytestmark = pytest.mark.integration
+def _missing_services() -> None:
+    message = "Start MongoDB and Elasticsearch with Docker Compose first"
+    required = os.environ.get("REQUIRE_INTEGRATION", "").lower()
+    if required in {"1", "true", "yes"}:
+        pytest.fail(message)
+    pytest.skip(message)
 
 
 def _port_open(url: str, default_port: int) -> bool:
@@ -26,11 +31,26 @@ def _port_open(url: str, default_port: int) -> bool:
         return False
 
 
+def test_missing_services_skip_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("REQUIRE_INTEGRATION", raising=False)
+
+    with pytest.raises(pytest.skip.Exception, match="MongoDB and Elasticsearch"):
+        _missing_services()
+
+
+def test_missing_services_fail_when_required(monkeypatch) -> None:
+    monkeypatch.setenv("REQUIRE_INTEGRATION", "1")
+
+    with pytest.raises(pytest.fail.Exception, match="MongoDB and Elasticsearch"):
+        _missing_services()
+
+
+@pytest.mark.integration
 def test_product_write_is_searchable_with_local_services(monkeypatch) -> None:
     mongo_url = os.environ.get("MONGODB_URL", "mongodb://localhost:27017")
     elasticsearch_url = os.environ.get("ELASTICSEARCH_URL", "http://localhost:9200")
     if not _port_open(mongo_url, 27017) or not _port_open(elasticsearch_url, 9200):
-        pytest.skip("Start MongoDB and Elasticsearch with Docker Compose first")
+        _missing_services()
 
     suffix = uuid4().hex[:12]
     database = f"product_test_{suffix}"
