@@ -73,8 +73,25 @@ services:
       retries: 15
       start_period: 30s
 
+  hbase:
+    build:
+      context: ./docker/hbase
+    environment:
+      HBASE_HEAPSIZE: "1024"
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - hbase-data:/data/hbase
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/version/cluster"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 90s
+
 volumes:
   cassandra-data:
   kafka-data:
   mongo-data:
   elasticsearch-data:
+  hbase-data:
