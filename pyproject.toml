@@ -22,8 +22,15 @@ dev = [
     "pytest>=8,<10",
 ]
 
+[project.scripts]
+recommendation-api = "ecommerce_analytics.recommendation_api:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
 [tool.setuptools.packages.find]
 where = ["src"]
+namespaces = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
