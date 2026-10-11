@@ -1,0 +1,77 @@
+{
+  "benchmark": "Elasticsearch catalog indexing",
+  "benchmark_date_utc": "2026-10-11",
+  "source": {
+    "dataset": "Amazon Reviews 2023 product catalog",
+    "catalog_records": 7675,
+    "mapped_records": 7675,
+    "synthetic_records": 0,
+    "source_files_in_repository": false,
+    "note": "Benchmark input was read from the existing local catalog and ASIN-to-product-ID mapping files; those data files are not included in this commit."
+  },
+  "environment": {
+    "host": "macOS 27.0 arm64",
+    "docker_desktop": "4.94.0",
+    "docker_engine": "29.8.2",
+    "elasticsearch": "8.19.3",
+    "deployment": "single-node Docker Compose"
+  },
+  "method": {
+    "repetitions_per_size": 3,
+    "size_order": [
+      100,
+      300,
+      1000
+    ],
+    "timed_region": "catalog indexing and deletion of its temporary index",
+    "selection_outside_timed_region": true,
+    "temporary_indices_removed": true
+  },
+  "results": [
+    {
+      "products": 100,
+      "elapsed_seconds": [
+        0.228002458,
+        0.13592475,
+        0.1266975
+      ],
+      "products_per_second": [
+        438.591763,
+        735.701188,
+        789.281556
+      ],
+      "median_elapsed_seconds": 0.13592475,
+      "median_products_per_second": 735.701188
+    },
+    {
+      "products": 300,
+      "elapsed_seconds": [
+        0.227254375,
+        0.151233917,
+        0.139908292
+      ],
+      "products_per_second": [
+        1320.106599,
+        1983.682007,
+        2144.261757
+      ],
+      "median_elapsed_seconds": 0.151233917,
+      "median_products_per_second": 1983.682007
+    },
+    {
+      "products": 1000,
+      "elapsed_seconds": [
+        0.35626975,
+        0.270318709,
+        0.249672334
+      ],
+      "products_per_second": [
+        2806.861935,
+        3699.336993,
+        4005.249536
+      ],
+      "median_elapsed_seconds": 0.270318709,
+      "median_products_per_second": 3699.336993
+    }
+  ]
+}
