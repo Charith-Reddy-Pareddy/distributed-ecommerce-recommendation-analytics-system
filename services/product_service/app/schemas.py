@@ -33,6 +33,7 @@ class ProductBase(BaseModel):
 
     name: str = Field(min_length=1, max_length=200)
     category: str = Field(min_length=1, max_length=100)
+    brand: str | None = None
     price: Decimal = Field(ge=0, max_digits=10, decimal_places=2)
     currency: str = Field(default="USD", pattern=r"^[A-Z]{3}$")
     description: str = ""
