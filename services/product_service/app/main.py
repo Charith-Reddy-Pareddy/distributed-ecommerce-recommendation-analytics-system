@@ -1,9 +1,11 @@
 from contextlib import asynccontextmanager
 import os
+from pathlib import Path
 from typing import AsyncIterator
 
 from elasticsearch import AsyncElasticsearch
-from fastapi import Depends, FastAPI, HTTPException, Path, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Path as IdPath, Query, Request
+from fastapi.staticfiles import StaticFiles
 from pymongo import AsyncMongoClient
 
 from services.product_service.app.catalog import MongoProductRepository, ProductRepository
@@ -35,6 +37,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Product Catalog Service", lifespan=lifespan)
+app.mount(
+    "/dashboard",
+    StaticFiles(directory=Path(__file__).resolve().parents[2] / "dashboard", html=True),
+    name="dashboard",
+)
 
 
 def get_product_repository(request: Request) -> ProductRepository:
@@ -70,6 +77,13 @@ async def list_products(
     return await repository.list(skip, limit)
 
 
+@app.get("/products/count")
+async def count_products(
+    repository: ProductRepository = Depends(get_product_repository),
+) -> dict[str, int]:
+    return {"count": await repository.count()}
+
+
 @app.get("/products/search", response_model=list[ProductOut])
 async def search_products(
     q: str = Query(min_length=1, max_length=200),
@@ -82,7 +96,7 @@ async def search_products(
 
 @app.get("/products/{product_id}", response_model=ProductOut)
 async def get_product(
-    product_id: int = Path(gt=0),
+    product_id: int = IdPath(gt=0),
     repository: ProductRepository = Depends(get_product_repository),
 ) -> ProductOut:
     product = await repository.get(product_id)

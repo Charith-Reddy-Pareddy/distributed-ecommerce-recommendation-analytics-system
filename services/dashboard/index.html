@@ -7,352 +7,179 @@
     <title>Store overview</title>
     <style>
       :root {
-        color-scheme: light;
-        --page: #f5f7f6;
-        --panel: #fff;
-        --ink: #24312e;
-        --muted: #74817d;
-        --line: #e6ece9;
-        --accent: #267968;
-        --accent-soft: #e8f3ef;
-        --shadow: 0 8px 24px rgb(31 54 47 / 4%);
-        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color-scheme: light; --page: #f5f7f6; --panel: #fff; --ink: #24312e;
+        --muted: #74817d; --line: #e6ece9; --accent: #267968; --soft: #e8f3ef;
+        font: 14px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
-
       * { box-sizing: border-box; }
-
-      body {
-        min-width: 320px;
-        min-height: 100vh;
-        margin: 0;
-        color: var(--ink);
-        background: var(--page);
-      }
-
-      button, a { font: inherit; }
-
+      body { min-width: 320px; min-height: 100vh; margin: 0; color: var(--ink); background: var(--page); }
+      a, button, input { font: inherit; }
       .layout { display: flex; min-height: 100vh; }
-
-      .sidebar {
-        display: flex;
-        width: 238px;
-        flex: 0 0 238px;
-        flex-direction: column;
-        padding: 26px 16px 18px;
-        border-right: 1px solid var(--line);
-        background: #fbfcfb;
-      }
-
-      .brand {
-        display: flex;
-        align-items: center;
-        gap: 11px;
-        padding: 0 12px 32px;
-        color: var(--ink);
-        font-size: 15px;
-        font-weight: 700;
-        letter-spacing: -.03em;
-        text-decoration: none;
-      }
-
-      .brand-mark {
-        display: grid;
-        width: 34px;
-        height: 34px;
-        place-items: center;
-        border-radius: 11px;
-        color: #fff;
-        background: var(--accent);
-      }
-
-      .nav-label {
-        margin: 0 12px 9px;
-        color: #9aa5a1;
-        font-size: 10px;
-        font-weight: 700;
-        letter-spacing: .12em;
-        text-transform: uppercase;
-      }
-
-      .nav { display: grid; gap: 5px; }
-
-      .nav a {
-        display: flex;
-        min-height: 42px;
-        align-items: center;
-        gap: 12px;
-        padding: 0 12px;
-        border-radius: 9px;
-        color: #687570;
-        font-size: 13px;
-        font-weight: 550;
-        text-decoration: none;
-      }
-
-      .nav a[aria-current="page"] {
-        color: var(--accent);
-        background: var(--accent-soft);
-        font-weight: 650;
-      }
-
-      .nav svg { width: 17px; height: 17px; }
-
-      .sidebar-note {
-        margin-top: auto;
-        padding: 14px;
-        border: 1px solid var(--line);
-        border-radius: 12px;
-        background: var(--panel);
-      }
-
-      .sidebar-note strong { display: block; font-size: 12px; }
-      .sidebar-note p { margin: 6px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
-
-      main { width: min(1320px, 100%); margin: 0 auto; padding: 32px 38px 48px; }
-
-      .topbar {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 34px;
-      }
-
-      .breadcrumb { color: var(--muted); font-size: 12px; }
-      .profile {
-        display: grid;
-        width: 34px;
-        height: 34px;
-        place-items: center;
-        border: 1px solid var(--line);
-        border-radius: 50%;
-        color: #687570;
-        background: var(--panel);
-        font-size: 11px;
-        font-weight: 700;
-      }
-
-      .heading-row {
-        display: flex;
-        align-items: flex-end;
-        justify-content: space-between;
-        gap: 20px;
-        margin-bottom: 22px;
-      }
-
+      aside { width: 230px; flex: 0 0 230px; padding: 26px 16px; border-right: 1px solid var(--line); background: #fbfcfb; }
+      .brand { display: flex; align-items: center; gap: 11px; margin: 0 12px 34px; font-size: 15px; font-weight: 700; text-decoration: none; color: var(--ink); }
+      .mark { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 11px; color: #fff; background: var(--accent); }
+      .nav-label { margin: 0 12px 9px; color: #9aa5a1; font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+      nav { display: grid; gap: 5px; }
+      nav a { padding: 10px 12px; border-radius: 9px; color: #687570; font-size: 13px; text-decoration: none; }
+      nav a:hover, nav a[aria-current="page"] { color: var(--accent); background: var(--soft); }
+      main { width: min(1240px, 100%); margin: 0 auto; padding: 32px 38px 48px; }
+      .topbar { display: flex; justify-content: space-between; margin-bottom: 34px; color: var(--muted); font-size: 12px; }
       h1 { margin: 0; font-size: clamp(25px, 3vw, 31px); letter-spacing: -.045em; }
-      .subtitle { margin: 8px 0 0; color: var(--muted); font-size: 13px; }
-
-      .period {
-        min-height: 37px;
-        padding: 0 12px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        color: #53615c;
-        background: var(--panel);
-        font-size: 12px;
-      }
-
-      .notice {
-        display: flex;
-        align-items: flex-start;
-        gap: 11px;
-        margin: 0 0 22px;
-        padding: 14px 16px;
-        border: 1px solid #dcece6;
-        border-radius: 11px;
-        background: #f0f8f5;
-      }
-
-      .notice-dot {
-        width: 8px;
-        height: 8px;
-        flex: 0 0 8px;
-        margin-top: 4px;
-        border-radius: 50%;
-        background: #83aa9b;
-      }
-
-      .notice strong { display: block; color: #365f53; font-size: 12px; }
-      .notice p { margin: 4px 0 0; color: #668078; font-size: 11px; line-height: 1.5; }
-
-      .section-title {
-        margin: 0 0 13px;
-        font-size: 13px;
-        font-weight: 650;
-        letter-spacing: -.01em;
-      }
-
-      .metrics {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 14px;
-        margin-bottom: 22px;
-      }
-
-      .card {
-        border: 1px solid var(--line);
-        border-radius: 12px;
-        background: var(--panel);
-        box-shadow: var(--shadow);
-      }
-
-      .metric { min-height: 124px; padding: 17px 18px; }
-      .metric-label { color: var(--muted); font-size: 11px; font-weight: 550; }
-      .metric-value { margin-top: 16px; color: #9ca8a4; font-size: 25px; font-weight: 650; letter-spacing: -.04em; }
-      .metric-foot { margin-top: 5px; color: #a1aca8; font-size: 10px; }
-
-      .activity { min-height: 260px; padding: 19px 20px; }
-      .activity-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-      .range { color: #9aa5a1; font-size: 10px; }
-
-      .empty {
-        display: grid;
-        min-height: 180px;
-        place-content: center;
-        justify-items: center;
-        padding: 20px;
-        text-align: center;
-      }
-
-      .empty-icon {
-        display: grid;
-        width: 38px;
-        height: 38px;
-        place-items: center;
-        border-radius: 12px;
-        color: var(--accent);
-        background: var(--accent-soft);
-      }
-
-      .empty-icon svg { width: 19px; height: 19px; }
-      .empty strong { margin-top: 11px; font-size: 12px; }
-      .empty p { max-width: 320px; margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.55; }
-
-      .lower-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px; }
-      .lower-card { min-height: 188px; padding: 18px 20px; }
-
+      h2 { margin: 0; font-size: 14px; }
+      .subtitle { margin: 7px 0 22px; color: var(--muted); font-size: 13px; }
+      .notice { margin-bottom: 22px; padding: 13px 16px; border: 1px solid #dcece6; border-radius: 11px; color: #365f53; background: #f0f8f5; font-size: 12px; }
+      .notice[data-state="error"] { border-color: #f0d8d4; color: #8b3d32; background: #fff5f3; }
+      .section-title { margin: 0 0 12px; font-size: 13px; font-weight: 650; }
+      .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 22px; }
+      .card { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); box-shadow: 0 8px 24px rgb(31 54 47 / 4%); }
+      .metric { min-height: 122px; padding: 17px 18px; }
+      .metric-label { color: var(--muted); font-size: 11px; }
+      .metric-value { margin-top: 15px; font-size: 24px; font-weight: 650; letter-spacing: -.04em; }
+      .metric-foot { margin-top: 4px; color: var(--muted); font-size: 10px; }
+      .content-grid { display: grid; grid-template-columns: 1.15fr .85fr; gap: 14px; }
+      .panel { min-height: 230px; padding: 19px 20px; }
+      .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+      .hint { color: var(--muted); font-size: 10px; }
+      form { display: flex; gap: 8px; }
+      input { width: 100%; min-width: 0; padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: white; }
+      button { padding: 9px 14px; border: 0; border-radius: 8px; color: white; background: var(--accent); cursor: pointer; }
+      button:disabled { opacity: .6; cursor: wait; }
+      ul { display: grid; gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
+      li { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; }
+      li strong { display: block; font-size: 12px; }
+      li span { color: var(--muted); font-size: 11px; }
+      .empty { display: grid; min-height: 120px; place-content: center; color: var(--muted); text-align: center; font-size: 12px; }
+      .empty strong { color: var(--ink); }
+      :focus-visible { outline: 3px solid #9bcdbd; outline-offset: 2px; }
       @media (max-width: 900px) {
-        .sidebar { width: 205px; flex-basis: 205px; }
-        main { padding: 28px 24px 40px; }
+        aside { width: 195px; flex-basis: 195px; } main { padding: 28px 24px 40px; }
         .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       }
-
       @media (max-width: 620px) {
         .layout { display: block; }
-        .sidebar { width: 100%; padding: 14px 16px 10px; border-right: 0; border-bottom: 1px solid var(--line); }
-        .brand { padding: 0 2px 12px; }
-        .nav-label, .sidebar-note { display: none; }
-        .nav { display: flex; gap: 4px; overflow-x: auto; }
-        .nav a { min-height: 37px; flex: 0 0 auto; gap: 7px; padding: 0 10px; font-size: 11px; }
-        .nav svg { width: 15px; height: 15px; }
-        main { padding: 22px 16px 32px; }
-        .topbar { margin-bottom: 26px; }
-        .heading-row { align-items: flex-start; }
-        .period { padding: 0 8px; font-size: 10px; }
-        .metrics { gap: 9px; }
-        .metric { min-height: 112px; padding: 14px; }
-        .metric-value { margin-top: 14px; }
-        .lower-grid { grid-template-columns: 1fr; }
+        aside { width: 100%; padding: 14px 16px 10px; border-right: 0; border-bottom: 1px solid var(--line); }
+        .brand { margin: 0 2px 12px; } .nav-label { display: none; }
+        nav { display: flex; gap: 4px; overflow-x: auto; }
+        nav a { flex: 0 0 auto; padding: 8px 10px; font-size: 11px; }
+        main { padding: 22px 16px 32px; } .content-grid { grid-template-columns: 1fr; }
       }
     </style>
   </head>
   <body>
     <div class="layout">
-      <aside class="sidebar" aria-label="Main navigation">
-        <a class="brand" href="#" aria-label="Meridian home">
-          <span class="brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M6.5 8.5h11l1 11h-13l1-11Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/><path d="M9 9V6a3 3 0 0 1 6 0v3" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
-          </span>
-          Meridian
-        </a>
+      <aside aria-label="Main navigation">
+        <a class="brand" href="#overview"><span class="mark" aria-hidden="true">M</span>Store overview</a>
         <p class="nav-label">Workspace</p>
-        <nav class="nav">
-          <a href="#" aria-current="page">
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.7"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.7"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.7"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.7"/></svg>
-            Overview
-          </a>
-          <a href="#">
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 5.5h16v13H4zM8 9h8M8 13h5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            Products
-          </a>
-          <a href="#">
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 18V6m0 12h16M8 15l3-4 3 2 5-6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            Recommendations
-          </a>
-          <a href="#">
-            <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="8.5" stroke="currentColor" stroke-width="1.7"/><path d="M12 7v5l3 2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            Activity
-          </a>
+        <nav>
+          <a href="#overview" aria-current="page">Overview</a>
+          <a href="#catalog">Catalog</a>
+          <a href="#activity">Activity</a>
+          <a href="#recommendations">Recommendations</a>
         </nav>
-        <div class="sidebar-note">
-          <strong>Data connection</strong>
-          <p>This view will show live catalog and service data once connected.</p>
-        </div>
       </aside>
-
-      <main>
-        <div class="topbar">
-          <span class="breadcrumb">Workspace&nbsp; / &nbsp;Overview</span>
-          <span class="profile" aria-label="Account">CR</span>
-        </div>
-
-        <div class="heading-row">
-          <div>
-            <h1>Store overview</h1>
-            <p class="subtitle">A clear view of your catalog, activity, and recommendations.</p>
-          </div>
-          <button class="period" type="button" disabled aria-label="Date range, available after data connection">Date range&nbsp;⌄</button>
-        </div>
-
-        <section class="notice" aria-label="Connection status">
-          <span class="notice-dot" aria-hidden="true"></span>
-          <div>
-            <strong>Dashboard shell is ready</strong>
-            <p>Live figures will appear after the product and analytics services are connected. No sample results are shown here.</p>
-          </div>
-        </section>
-
+      <main id="overview">
+        <div class="topbar"><span>Workspace&nbsp; / &nbsp;Overview</span><span>Live service data</span></div>
+        <h1>Store overview</h1>
+        <p class="subtitle">Catalog and search status from the running product service.</p>
+        <div id="connection" class="notice" role="status" aria-live="polite">Connecting to the catalog service…</div>
         <section aria-labelledby="metrics-title">
           <h2 class="section-title" id="metrics-title">At a glance</h2>
           <div class="metrics">
-            <article class="card metric"><div class="metric-label">Products indexed</div><div class="metric-value" aria-label="Waiting for live data">—</div><div class="metric-foot">Waiting for catalog connection</div></article>
-            <article class="card metric"><div class="metric-label">Events received</div><div class="metric-value" aria-label="Waiting for live data">—</div><div class="metric-foot">Waiting for event connection</div></article>
-            <article class="card metric"><div class="metric-label">Recommendations</div><div class="metric-value" aria-label="Waiting for live data">—</div><div class="metric-foot">Waiting for serving connection</div></article>
-            <article class="card metric"><div class="metric-label">Search latency</div><div class="metric-value" aria-label="Waiting for live data">—</div><div class="metric-foot">Waiting for service metrics</div></article>
+            <article class="card metric"><div class="metric-label">Products in catalog</div><div class="metric-value" id="product-count">—</div><div class="metric-foot" id="catalog-note">Loading catalog count…</div></article>
+            <article class="card metric" id="activity"><div class="metric-label">Event activity</div><div class="metric-value">—</div><div class="metric-foot">No live event metrics endpoint</div></article>
+            <article class="card metric" id="recommendations"><div class="metric-label">Recommendation metrics</div><div class="metric-value">—</div><div class="metric-foot">No live metrics endpoint</div></article>
+            <article class="card metric"><div class="metric-label">Last search latency</div><div class="metric-value" id="search-latency">—</div><div class="metric-foot" id="search-note">Run a search to measure</div></article>
           </div>
         </section>
-
-        <section class="card activity" aria-labelledby="activity-title">
-          <div class="activity-head">
-            <h2 class="section-title" id="activity-title">Store activity</h2>
-            <span class="range">Live activity will appear here</span>
-          </div>
-          <div class="empty">
-            <span class="empty-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" fill="none"><path d="M4 18V6m0 12h16M8 15l3-4 3 2 5-6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </span>
-            <strong>Activity data is not connected yet</strong>
-            <p>This chart will use events from the running pipeline when the dashboard is wired to the services.</p>
-          </div>
-        </section>
-
-        <div class="lower-grid">
-          <section class="card lower-card" aria-labelledby="top-products-title">
-            <h2 class="section-title" id="top-products-title">Popular products</h2>
-            <div class="empty">
-              <strong>Catalog data will appear here</strong>
-              <p>Product rankings will be calculated from actual interactions.</p>
-            </div>
+        <div class="content-grid" id="catalog">
+          <section class="card panel" aria-labelledby="search-title">
+            <div class="panel-head"><h2 id="search-title">Search the catalog</h2><span class="hint">Live Elasticsearch results</span></div>
+            <form id="search-form">
+              <input id="search-query" type="search" name="q" maxlength="200" placeholder="Search products" aria-label="Search products" required>
+              <button id="search-button" type="submit">Search</button>
+            </form>
+            <div id="search-results" class="empty" role="status" aria-live="polite">Enter a term to search the live catalog.</div>
           </section>
-          <section class="card lower-card" aria-labelledby="recommendations-title">
-            <h2 class="section-title" id="recommendations-title">Recommendation health</h2>
-            <div class="empty">
-              <strong>Recommendation data will appear here</strong>
-              <p>Service metrics will be shown after the recommendation API is connected.</p>
-            </div>
+          <section class="card panel">
+            <div class="panel-head"><h2>Store activity</h2><span class="hint">Live data only</span></div>
+            <div class="empty"><div><strong>Not connected</strong><br>There is no event analytics endpoint in the product service yet.</div></div>
           </section>
         </div>
       </main>
     </div>
+    <script>
+      const countEl = document.querySelector("#product-count");
+      const catalogNote = document.querySelector("#catalog-note");
+      const connection = document.querySelector("#connection");
+      const latency = document.querySelector("#search-latency");
+      const searchNote = document.querySelector("#search-note");
+      const form = document.querySelector("#search-form");
+      const query = document.querySelector("#search-query");
+      const button = document.querySelector("#search-button");
+      const results = document.querySelector("#search-results");
+
+      async function loadCount() {
+        try {
+          const res = await fetch("/products/count", { headers: { Accept: "application/json" } });
+          if (!res.ok) throw new Error("Catalog request failed");
+          const data = await res.json();
+          if (!Number.isInteger(data.count) || data.count < 0) throw new Error("Invalid catalog count");
+          countEl.textContent = data.count.toLocaleString();
+          catalogNote.textContent = "Current MongoDB catalog count";
+          connection.textContent = "Catalog service connected";
+          connection.dataset.state = "ready";
+        } catch {
+          countEl.textContent = "Unavailable";
+          catalogNote.textContent = "Could not load catalog count";
+          connection.textContent = "Catalog service is unavailable. Start the product service and MongoDB, then refresh.";
+          connection.dataset.state = "error";
+        }
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const term = query.value.trim();
+        if (!term) return;
+        button.disabled = true;
+        latency.textContent = "…";
+        searchNote.textContent = "Waiting for search service";
+        results.className = "empty";
+        results.textContent = "Searching the live catalog…";
+        const start = performance.now();
+        try {
+          const params = new URLSearchParams({ q: term, limit: "5" });
+          const res = await fetch("/products/search?" + params.toString(), { headers: { Accept: "application/json" } });
+          if (!res.ok) throw new Error("Search request failed");
+          const items = await res.json();
+          latency.textContent = Math.round(performance.now() - start) + " ms";
+          searchNote.textContent = "Browser-measured response time";
+          if (!items.length) {
+            results.className = "empty";
+            results.textContent = "No matching products were returned.";
+            return;
+          }
+          const list = document.createElement("ul");
+          for (const item of items) {
+            const row = document.createElement("li");
+            const name = document.createElement("strong");
+            const detail = document.createElement("span");
+            name.textContent = item.name;
+            detail.textContent = item.category + " · " + item.currency + " " + item.price;
+            row.append(name, detail);
+            list.append(row);
+          }
+          results.className = "";
+          results.replaceChildren(list);
+        } catch {
+          latency.textContent = "Unavailable";
+          searchNote.textContent = "Search service could not be reached";
+          results.className = "empty";
+          results.textContent = "Search is unavailable. Check the product service and Elasticsearch.";
+        } finally {
+          button.disabled = false;
+        }
+      });
+      loadCount();
+    </script>
   </body>
 </html>

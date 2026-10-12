@@ -13,6 +13,8 @@ class ProductRepository(Protocol):
 
     async def list(self, skip: int, limit: int) -> list[ProductOut]: ...
 
+    async def count(self) -> int: ...
+
 
 class MongoProductRepository:
     def __init__(self, client: AsyncMongoClient, database: str = "product_catalog") -> None:
@@ -41,6 +43,9 @@ class MongoProductRepository:
         cursor = self._products.find().sort("_id", 1).skip(skip).limit(limit)
         documents = await cursor.to_list(length=limit)
         return [self._to_product(document) for document in documents]
+
+    async def count(self) -> int:
+        return await self._products.count_documents({})
 
     @staticmethod
     def _to_product(document: dict) -> ProductOut:
