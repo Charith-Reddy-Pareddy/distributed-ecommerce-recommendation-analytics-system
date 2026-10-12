@@ -4,6 +4,8 @@ from elasticsearch import AsyncElasticsearch
 
 from services.product_service.app.schemas import ProductOut
 
+BULK_SIZE = 500
+
 
 class ProductIndex(Protocol):
     async def index_product(self, product: ProductOut) -> None: ...
@@ -19,10 +21,34 @@ class ElasticsearchProductIndex:
     async def index_product(self, product: ProductOut) -> None:
         await self._client.index(
             index=self._index,
-            id=str(product.id),
+            id=str(product.asin or product.id),
             document=product.model_dump(mode="json"),
             refresh="wait_for",
         )
+
+    async def index_catalog(self, products: list[ProductOut]) -> int:
+        if not products:
+            return 0
+
+        for start in range(0, len(products), BULK_SIZE):
+            batch = products[start : start + BULK_SIZE]
+            operations = []
+            for product in batch:
+                if not product.asin:
+                    raise ValueError("Catalog products must have an ASIN")
+                operations.extend(
+                    [
+                        {"index": {"_index": self._index, "_id": product.asin}},
+                        product.model_dump(mode="json"),
+                    ]
+                )
+
+            response = await self._client.bulk(operations=operations)
+            if response.get("errors"):
+                raise RuntimeError("Elasticsearch failed to index part of the catalog")
+
+        await self._client.indices.refresh(index=self._index)
+        return len(products)
 
     async def search(self, query: str, skip: int = 0, limit: int = 20) -> list[ProductOut]:
         response = await self._client.search(
