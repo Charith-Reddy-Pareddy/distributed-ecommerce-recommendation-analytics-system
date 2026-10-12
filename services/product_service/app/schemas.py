@@ -51,3 +51,13 @@ class ProductCreate(ProductBase):
 
 class ProductOut(ProductBase):
     id: int = Field(gt=0)
+
+
+class RecommendationItem(BaseModel):
+    product_id: int = Field(gt=0)
+    score: float
+
+
+class UserRecommendations(BaseModel):
+    user_id: str = Field(min_length=1)
+    recommendations: list[RecommendationItem]
