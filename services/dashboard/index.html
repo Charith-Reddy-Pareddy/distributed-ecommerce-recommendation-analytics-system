@@ -182,6 +182,26 @@
         font-size: 12px;
       }
       .empty strong { color: var(--ink); }
+      .product-result {
+        display: grid;
+        grid-template-columns: 54px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+      }
+      .product-photo {
+        display: grid;
+        width: 52px;
+        height: 52px;
+        place-items: center;
+        overflow: hidden;
+        border-radius: 7px;
+        background: #f5f6f5;
+      }
+      .product-photo img { width: 100%; height: 100%; object-fit: contain; }
+      .product-copy { min-width: 0; }
+      .product-copy strong { overflow-wrap: anywhere; }
+      .product-meta { display: block; color: var(--muted); font-size: 11px; }
+      .product-price { white-space: nowrap; font-size: 12px; font-weight: 650; }
       :focus-visible { outline: 3px solid #a7c8e8; outline-offset: 2px; }
       @media (max-width: 980px) {
         aside { width: 205px; flex-basis: 205px; }
@@ -223,6 +243,9 @@
         main { padding-inline: 12px; }
         .metrics { grid-template-columns: 1fr; gap: 9px; }
         .metric { min-height: 100px; }
+        .product-result { grid-template-columns: 46px minmax(0, 1fr); gap: 9px; }
+        .product-photo { width: 44px; height: 44px; }
+        .product-price { grid-column: 2; margin-top: -5px; }
         button { padding-inline: 12px; }
       }
       @media (prefers-reduced-motion: reduce) {
@@ -329,11 +352,44 @@
           const list = document.createElement("ul");
           for (const item of items) {
             const row = document.createElement("li");
+            const photo = document.createElement("div");
+            const info = document.createElement("div");
             const name = document.createElement("strong");
-            const detail = document.createElement("span");
+            const meta = document.createElement("span");
+            const price = document.createElement("span");
+            row.className = "product-result";
+            photo.className = "product-photo";
+            photo.setAttribute("aria-hidden", "true");
+            info.className = "product-copy";
+            meta.className = "product-meta";
+            price.className = "product-price";
             name.textContent = item.name;
-            detail.textContent = item.category + " · " + item.currency + " " + item.price;
-            row.append(name, detail);
+            const facts = [item.brand, item.category].filter(Boolean);
+            if (Number.isFinite(item.rating?.average) && item.rating.average > 0) {
+              const count = Number.isInteger(item.rating.count) ? item.rating.count : 0;
+              facts.push("★ " + item.rating.average.toFixed(1) + " (" + count + ")");
+            }
+            meta.textContent = facts.join(" · ");
+            price.textContent = (item.currency || "USD") + " " + item.price;
+            const image = item.images?.[0];
+            if (typeof image === "string") {
+              try {
+                const url = new URL(image);
+                if (url.protocol === "https:") {
+                  const img = document.createElement("img");
+                  img.src = url.href;
+                  img.alt = "";
+                  img.loading = "lazy";
+                  img.referrerPolicy = "no-referrer";
+                  img.addEventListener("error", () => photo.replaceChildren(), { once: true });
+                  photo.append(img);
+                }
+              } catch {
+                // Ignore malformed image URLs from catalog records.
+              }
+            }
+            info.append(name, meta);
+            row.append(photo, info, price);
             list.append(row);
           }
           results.className = "";
