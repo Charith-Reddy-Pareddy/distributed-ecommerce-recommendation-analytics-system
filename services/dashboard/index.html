@@ -8,160 +8,64 @@
     <style>
       :root {
         color-scheme: light;
-        --page: #f6f7f4;
+        --page: #f4f7f6;
         --panel: #fff;
-        --ink: #26323d;
-        --muted: #74808a;
-        --line: #e3e8e8;
-        --accent: #3479c7;
-        --soft: #edf4fc;
+        --ink: #172d29;
+        --muted: #687a75;
+        --line: #e1e9e6;
+        --accent: #247765;
+        --accent-dark: #185e50;
+        --soft: #e8f3ef;
         font: 14px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
       * { box-sizing: border-box; }
-      body {
-        min-width: 320px;
-        min-height: 100vh;
-        margin: 0;
-        color: var(--ink);
-        background: var(--page);
-      }
+      body { min-width: 320px; min-height: 100vh; margin: 0; color: var(--ink); background: var(--page); }
       a, button, input { font: inherit; }
-      .layout { min-height: 100vh; }
-      aside {
-        position: sticky;
-        top: 0;
-        z-index: 2;
-        display: flex;
-        min-height: 72px;
-        align-items: center;
-        justify-content: space-between;
-        gap: 20px;
-        padding: 12px clamp(20px, 4vw, 58px);
-        border-bottom: 1px solid var(--line);
-        background: rgb(255 255 255 / 94%);
-        backdrop-filter: blur(14px);
-      }
-      .brand {
-        display: flex;
-        align-items: center;
-        gap: 11px;
-        margin: 0;
-        color: var(--ink);
-        text-decoration: none;
-      }
+      .layout { width: min(1320px, 100%); min-height: 100vh; margin: 0 auto; padding: 0 36px 56px; }
+      aside { display: flex; min-height: 76px; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--line); }
+      .brand { display: flex; align-items: center; gap: 11px; margin: 0; color: var(--ink); text-decoration: none; }
       .brand-copy { display: grid; line-height: 1.25; }
-      .brand-copy strong { font-size: 14px; font-weight: 700; }
+      .brand-copy strong { font-size: 13px; font-weight: 700; }
       .brand-copy small { margin-top: 3px; color: var(--muted); font-size: 10px; }
-      .mark {
-        display: grid;
-        width: 36px;
-        height: 36px;
-        flex: 0 0 36px;
-        place-items: center;
-        border-radius: 11px;
-        color: #fff;
-        background: var(--accent);
-        font-weight: 700;
-      }
+      .mark { display: grid; width: 36px; height: 36px; flex: 0 0 36px; place-items: center; border-radius: 11px; color: #fff; background: var(--accent); font-size: 11px; font-weight: 700; }
       .nav-label { display: none; }
       nav { display: flex; align-items: center; gap: 5px; }
-      nav a {
-        padding: 9px 12px;
-        border-radius: 8px;
-        color: #687680;
-        font-size: 13px;
-        text-decoration: none;
-        transition: background-color .15s, color .15s;
-      }
-      nav a:hover, nav a[aria-current="page"] {
-        color: #245e9c;
-        background: var(--soft);
-      }
-      main {
-        width: min(1180px, 100%);
-        margin: 0 auto;
-        padding: 36px 34px 52px;
-      }
-      .page-heading { margin-bottom: 22px; }
-      .topbar {
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        justify-content: space-between;
-        gap: 8px 16px;
-        margin-bottom: 32px;
-        color: var(--muted);
-        font-size: 11px;
-      }
-      h1 { margin: 0; font-size: clamp(25px, 3vw, 31px); letter-spacing: -.04em; }
+      nav a { padding: 9px 12px; border-radius: 8px; color: var(--muted); font-size: 12px; text-decoration: none; transition: background-color .15s, color .15s; }
+      nav a:hover, nav a[aria-current="page"] { color: var(--accent-dark); background: var(--soft); }
+      main { padding: 0; }
+      .page-heading { margin-bottom: 24px; }
+      .topbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; color: var(--muted); font-size: 11px; }
+      .intro { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding: 34px 0 25px; }
+      .eyebrow { margin: 0 0 9px; color: var(--accent); font-size: 10px; font-weight: 750; letter-spacing: .14em; text-transform: uppercase; }
+      h1 { max-width: 720px; margin: 0; font-size: clamp(27px, 4vw, 38px); line-height: 1.12; letter-spacing: -.045em; }
       h2 { margin: 0; font-size: 14px; }
-      .subtitle { margin: 7px 0 0; color: var(--muted); font-size: 13px; }
-      .notice {
-        margin-bottom: 22px;
-        padding: 12px 15px;
-        border: 1px solid #dce7f1;
-        border-radius: 9px;
-        color: #355b80;
-        background: #f1f6fb;
-        font-size: 12px;
-      }
-      .notice[data-state="error"] {
-        border-color: #f0d8d4;
-        color: #8b3d32;
-        background: #fff5f3;
-      }
-      .section-title { margin: 0 0 12px; font-size: 13px; font-weight: 650; }
-      .metrics {
-        display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
-        gap: 13px;
-        margin-bottom: 20px;
-      }
-      .card {
-        border: 1px solid var(--line);
-        border-radius: 11px;
-        background: var(--panel);
-        box-shadow: 0 5px 18px rgb(33 50 65 / 4%);
-      }
-      .metric { min-height: 116px; padding: 16px 17px; }
-      .metric-label { color: var(--muted); font-size: 11px; }
-      .metric-value { margin-top: 14px; font-size: 24px; font-weight: 650; letter-spacing: -.035em; }
-      .metric-foot { margin-top: 4px; color: var(--muted); font-size: 10px; }
-      .content-grid {
-        display: grid;
-        grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr);
-        gap: 16px;
-      }
-      .search-panel { grid-column: 1 / -1; }
-      .panel { min-width: 0; min-height: 250px; padding: 21px 22px; }
-      .panel-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        margin-bottom: 14px;
-      }
-      .hint { color: var(--muted); font-size: 10px; }
+      .subtitle { max-width: 680px; margin: 11px 0 0; color: var(--muted); font-size: 13px; }
+      .intro-note { flex: 0 0 auto; padding: 8px 11px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--panel); font-size: 10px; }
+      .notice { display: flex; align-items: center; gap: 9px; min-height: 42px; margin-bottom: 22px; padding: 10px 13px; border: 1px solid #d9e9e3; border-radius: 9px; color: #365f53; background: #eff7f3; font-size: 11px; }
+      .notice[data-state="error"] { border-color: #f0d8d4; color: #8b3d32; background: #fff5f3; }
+      .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin: 0 0 11px; }
+      .section-title { margin: 0; font-size: 14px; font-weight: 650; }
+      .section-copy { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
+      .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 13px; margin-bottom: 23px; }
+      .card { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); box-shadow: 0 8px 24px rgb(25 53 45 / 4%); }
+      .metric { min-height: 112px; padding: 16px 17px; }
+      .metric-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .metric-label { color: var(--muted); font-size: 10px; font-weight: 650; }
+      .metric-mark { display: grid; width: 25px; height: 25px; place-items: center; border-radius: 8px; color: var(--accent); background: var(--soft); font-size: 11px; font-weight: 700; }
+      .metric-value { margin-top: 11px; font-size: 23px; font-weight: 680; line-height: 1.1; letter-spacing: -.04em; }
+      .metric-foot { margin-top: 5px; color: var(--muted); font-size: 10px; }
+      .content-grid { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(310px, .85fr); gap: 14px; }
+      .panel { min-width: 0; padding: 19px 20px; }
+      .panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+      .panel-head h2 { margin: 0; font-size: 14px; }
+      .panel-head p { margin: 4px 0 0; color: var(--muted); font-size: 11px; }
+      .source { flex: 0 0 auto; padding: 4px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--accent-dark); background: #f8fbf9; font-size: 9px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
       form { display: flex; gap: 8px; }
-      input {
-        width: 100%;
-        min-width: 0;
-        padding: 9px 11px;
-        border: 1px solid var(--line);
-        border-radius: 7px;
-        color: var(--ink);
-        background: #fff;
-      }
-      input:focus-visible { border-color: #8cb3dd; }
-      button {
-        padding: 9px 14px;
-        border: 0;
-        border-radius: 7px;
-        color: #fff;
-        background: var(--accent);
-        cursor: pointer;
-      }
-      button:hover { background: #2868ae; }
+      input { width: 100%; min-width: 0; min-height: 39px; padding: 9px 11px; border: 1px solid #dce5e1; border-radius: 8px; color: var(--ink); background: #fff; outline: none; }
+      input::placeholder { color: #96a39f; }
+      input:focus-visible { border-color: #83b7a8; box-shadow: 0 0 0 3px rgb(36 119 101 / 12%); }
+      button { flex: 0 0 auto; min-height: 39px; padding: 8px 15px; border: 0; border-radius: 8px; color: #fff; background: var(--accent); font-weight: 650; cursor: pointer; }
+      button:hover { background: var(--accent-dark); }
       button:disabled { opacity: .6; cursor: wait; }
       .data-form { align-items: flex-end; margin: 0 0 12px; }
       .data-form label { display: grid; min-width: 150px; flex: 1; gap: 3px; color: var(--muted); font-size: 11px; }
@@ -170,101 +74,62 @@
       .data-row strong { display: block; font-size: 12px; }
       .data-row span { color: var(--muted); font-size: 11px; }
       .data-score { white-space: nowrap; font-variant-numeric: tabular-nums; }
-      ul { display: grid; gap: 7px; margin: 13px 0 0; padding: 0; list-style: none; }
-      li {
-        padding: 9px 11px;
-        border: 1px solid var(--line);
-        border-radius: 7px;
-        overflow-wrap: anywhere;
-      }
+      ul { display: grid; gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
+      li { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; overflow-wrap: anywhere; }
       li strong { display: block; font-size: 12px; }
-      li span { color: var(--muted); font-size: 11px; }
-      .empty {
-        display: grid;
-        min-height: 120px;
-        place-content: center;
-        color: var(--muted);
-        text-align: center;
-        font-size: 12px;
-      }
+      li span { color: var(--muted); font-size: 10px; }
+      .empty { display: grid; min-height: 112px; place-content: center; color: var(--muted); text-align: center; font-size: 11px; }
       .empty strong { color: var(--ink); }
-      .product-result {
-        display: grid;
-        grid-template-columns: 54px minmax(0, 1fr) auto;
-        align-items: center;
-        gap: 12px;
-      }
-      .product-photo {
-        display: grid;
-        width: 52px;
-        height: 52px;
-        place-items: center;
-        overflow: hidden;
-        border-radius: 7px;
-        background: #f5f6f5;
-      }
+      .product-result { display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; align-items: center; gap: 12px; }
+      .product-photo { display: grid; width: 52px; height: 52px; place-items: center; overflow: hidden; border-radius: 7px; background: #f5f6f5; }
       .product-photo img { width: 100%; height: 100%; object-fit: contain; }
       .product-copy { min-width: 0; }
       .product-copy strong { overflow-wrap: anywhere; }
       .product-meta { display: block; color: var(--muted); font-size: 11px; }
       .product-price { white-space: nowrap; font-size: 12px; font-weight: 650; }
-      :focus-visible { outline: 3px solid #a7c8e8; outline-offset: 2px; }
-      @media (max-width: 980px) {
-        main { padding: 30px 25px 44px; }
+      .activity-panel { margin-top: 14px; }
+      .activity-panel .empty { min-height: 88px; }
+      :focus-visible { outline: 3px solid #9bcdbd; outline-offset: 2px; }
+      @media (max-width: 900px) {
+        .layout { padding-inline: 24px; }
         .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .content-grid { grid-template-columns: 1fr; }
-        .search-panel { grid-column: auto; }
       }
-      @media (max-width: 640px) {
-        aside {
-          position: sticky;
-          min-height: 0;
-          align-items: flex-start;
-          flex-direction: column;
-          gap: 10px;
-          padding: 12px 16px 9px;
-        }
-        nav {
-          width: 100%;
-          gap: 4px;
-          overflow-x: auto;
-          overscroll-behavior-inline: contain;
-        }
-        nav a {
-          display: flex;
-          min-height: 39px;
-          flex: 0 0 auto;
-          align-items: center;
-          padding: 8px 10px;
-          font-size: 11px;
-        }
-        main { padding: 24px 16px 34px; }
-        .topbar { margin-bottom: 18px; }
-        .page-heading { margin-bottom: 18px; }
-        .panel-head { align-items: flex-start; flex-direction: column; gap: 4px; }
-        .panel { padding: 17px; }
+      @media (max-width: 620px) {
+        .layout { padding: 0 16px 36px; }
+        aside { min-height: 0; align-items: flex-start; flex-direction: column; gap: 10px; padding: 12px 0 9px; }
+        nav { width: 100%; gap: 4px; overflow-x: auto; overscroll-behavior-inline: contain; }
+        nav a { display: flex; min-height: 39px; flex: 0 0 auto; align-items: center; padding: 8px 10px; font-size: 11px; }
+        .topbar { min-height: 0; }
+        .intro { align-items: flex-start; flex-direction: column; gap: 13px; padding: 26px 0 20px; }
+        .intro-note { align-self: flex-start; }
+        .section-head { align-items: flex-start; flex-direction: column; gap: 4px; }
+        .panel { padding: 16px; }
       }
-      @media (max-width: 390px) {
-        main { padding-inline: 12px; }
-        .metrics { grid-template-columns: 1fr; gap: 9px; }
-        .metric { min-height: 100px; }
+      @media (max-width: 400px) {
+        .layout { padding-inline: 12px; }
+        .brand { gap: 8px; }
+        .mark { width: 31px; height: 31px; flex-basis: 31px; }
+        nav a { padding-inline: 6px; font-size: 10px; }
+        .metrics { gap: 9px; }
+        .metric { min-height: 101px; padding: 13px; }
+        .metric-value { font-size: 20px; }
+        .data-form { align-items: stretch; flex-direction: column; }
+        .data-form label { min-width: 0; }
+        .panel-head { flex-direction: column; gap: 7px; }
         .product-result { grid-template-columns: 46px minmax(0, 1fr); gap: 9px; }
         .product-photo { width: 44px; height: 44px; }
         .product-price { grid-column: 2; margin-top: -5px; }
-        button { padding-inline: 12px; }
       }
       @media (prefers-reduced-motion: reduce) {
-        *, *::before, *::after {
-          scroll-behavior: auto !important;
-          transition-duration: .01ms !important;
-        }
+        *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
       }
     </style>
   </head>
   <body>
     <div class="layout">
       <aside aria-label="Main navigation">
-        <a class="brand" href="#overview"><span class="mark" aria-hidden="true">M</span><span class="brand-copy"><strong>Commerce</strong><small>Analytics workspace</small></span></a>
+        <a class="brand" href="#overview"><span class="mark" aria-hidden="true">EC</span><span class="brand-copy"><strong>E-commerce analytics</strong><small>Store intelligence</small></span></a>
         <p class="nav-label">Workspace</p>
         <nav>
           <a href="#overview" aria-current="page">Overview</a>
@@ -275,39 +140,31 @@
       </aside>
       <main id="overview">
         <header class="page-heading">
-          <div class="topbar"><span>Workspace&nbsp; / &nbsp;Overview</span><span>Live catalog&nbsp; · &nbsp;Elasticsearch</span></div>
-          <h1>Commerce analytics</h1>
-          <p class="subtitle">Explore the product catalog and the services behind each insight.</p>
+          <div class="topbar"><span>Workspace&nbsp; / &nbsp;Overview</span><span>Amazon catalog&nbsp; · &nbsp;Live services</span></div>
+          <div class="intro"><div><p class="eyebrow">Store intelligence</p><h1>Commerce analytics</h1><p class="subtitle">Search real products, review visitor activity, and explore recommendations from the services behind this project.</p></div><span class="intro-note">Live service data</span></div>
         </header>
         <div id="connection" class="notice" role="status" aria-live="polite">Connecting to the catalog service…</div>
         <section aria-labelledby="metrics-title">
-          <h2 class="section-title" id="metrics-title">At a glance</h2>
+          <div class="section-head"><div><h2 class="section-title" id="metrics-title">At a glance</h2><p class="section-copy">Values appear as connected services return them.</p></div></div>
           <div class="metrics">
-            <article class="card metric"><div class="metric-label">Products in catalog</div><div class="metric-value" id="product-count">—</div><div class="metric-foot" id="catalog-note">Loading catalog count…</div></article>
-            <article class="card metric"><div class="metric-label">Recent events</div><div class="metric-value" id="event-count">—</div><div class="metric-foot" id="event-note">Load recent activity to see the count</div></article>
-            <article class="card metric"><div class="metric-label">Recommendations for visitor</div><div class="metric-value" id="recommendation-count">—</div><div class="metric-foot" id="recommendation-note">Request current recommendations</div></article>
-            <article class="card metric"><div class="metric-label">Last search latency</div><div class="metric-value" id="search-latency">—</div><div class="metric-foot" id="search-note">Run a search to measure</div></article>
+            <article class="card metric"><div class="metric-top"><span class="metric-label">Products in catalog</span><span class="metric-mark" aria-hidden="true">P</span></div><div class="metric-value" id="product-count">—</div><div class="metric-foot" id="catalog-note">Loading catalog count…</div></article>
+            <article class="card metric"><div class="metric-top"><span class="metric-label">Recent events</span><span class="metric-mark" aria-hidden="true">E</span></div><div class="metric-value" id="event-count">—</div><div class="metric-foot" id="event-note">Load recent activity to see the count</div></article>
+            <article class="card metric"><div class="metric-top"><span class="metric-label">Recommendations</span><span class="metric-mark" aria-hidden="true">A</span></div><div class="metric-value" id="recommendation-count">—</div><div class="metric-foot" id="recommendation-note">Request current recommendations</div></article>
+            <article class="card metric"><div class="metric-top"><span class="metric-label">Last search latency</span><span class="metric-mark" aria-hidden="true">↗</span></div><div class="metric-value" id="search-latency">—</div><div class="metric-foot" id="search-note">Run a search to measure</div></article>
           </div>
         </section>
         <div class="content-grid" id="catalog">
           <section class="card panel search-panel" aria-labelledby="search-title">
-            <div class="panel-head"><h2 id="search-title">Search the catalog</h2><span class="hint">Live Elasticsearch results</span></div>
+            <div class="panel-head"><div><h2 id="search-title">Product search</h2><p>Find real products indexed from the Amazon catalog.</p></div><span class="source">Elasticsearch</span></div>
             <form id="search-form">
               <input id="search-query" type="search" name="q" maxlength="200" placeholder="Search products" aria-label="Search products" required>
               <button id="search-button" type="submit">Search</button>
             </form>
             <div id="search-results" class="empty" role="status" aria-live="polite">Enter a term to search the live catalog.</div>
           </section>
-          <section class="card panel" id="activity" aria-labelledby="activity-title">
-            <div class="panel-head"><h2 id="activity-title">Recent visitor activity</h2><span class="hint">Event service · Cassandra</span></div>
-            <form class="data-form" id="event-form">
-              <label for="event-user-id">Visitor ID<input id="event-user-id" type="number" min="1" step="1" required></label>
-              <button id="event-button" type="submit">Load activity</button>
-            </form>
-            <div id="event-results" class="empty" role="status" aria-live="polite">Enter a visitor ID to load its recorded events.</div>
-          </section>
+
           <section class="card panel" id="recommendations" aria-labelledby="recommendation-title">
-            <div class="panel-head"><h2 id="recommendation-title">Personalized recommendations</h2><span class="hint">ALS · HBase</span></div>
+            <div class="panel-head"><div><h2 id="recommendation-title">Personalized recommendations</h2><p>Look up stored ALS results for a review user.</p></div><span class="source">ALS · HBase</span></div>
             <form class="data-form" id="recommendation-form">
               <label for="recommendation-user-id">Visitor ID<input id="recommendation-user-id" type="text" maxlength="100" required></label>
               <button id="recommendation-button" type="submit">Get recommendations</button>
@@ -315,6 +172,14 @@
             <div id="recommendation-results" class="empty" role="status" aria-live="polite">Enter a visitor ID to request its recommendations.</div>
           </section>
         </div>
+        <section class="card panel activity-panel" id="activity" aria-labelledby="activity-title">
+          <div class="panel-head"><div><h2 id="activity-title">Recent event history</h2><p>Persisted in Cassandra from the active Kafka event stream.</p></div><span class="source">Kafka · Cassandra</span></div>
+          <form class="data-form" id="event-form">
+            <label for="event-user-id">Visitor ID<input id="event-user-id" type="number" min="1" step="1" required></label>
+            <button id="event-button" type="submit">Load activity</button>
+          </form>
+          <div id="event-results" class="empty" role="status" aria-live="polite">Enter a visitor ID to load its recorded events.</div>
+        </section>
       </main>
     </div>
     <script>
