@@ -3,6 +3,7 @@ from urllib.error import URLError
 import os
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Query
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 from ecommerce_analytics.hbase_recommendations import HBaseRecommendations
@@ -27,6 +28,19 @@ def get_store() -> RecommendationStore:
 
 
 app = FastAPI(title="Recommendation Service")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        origin.strip()
+        for origin in os.environ.get(
+            "DASHBOARD_ORIGINS",
+            "http://localhost:8000,http://127.0.0.1:8000",
+        ).split(",")
+        if origin.strip()
+    ],
+    allow_methods=["GET"],
+    allow_headers=["Accept"],
+)
 
 
 @app.get("/health")

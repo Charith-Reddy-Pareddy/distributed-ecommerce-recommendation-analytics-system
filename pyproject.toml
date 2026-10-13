@@ -24,6 +24,7 @@ dev = [
 als = ["numpy>=1.21,<3", "pyspark>=4.0,<5"]
 
 [project.scripts]
+event-api = "ecommerce_analytics.main:main"
 recommendation-api = "ecommerce_analytics.recommendation_api:main"
 
 [tool.setuptools]

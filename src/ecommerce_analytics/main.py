@@ -4,6 +4,7 @@ from functools import lru_cache
 from typing import Annotated, Protocol
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Query
+from fastapi.middleware.cors import CORSMiddleware
 
 from ecommerce_analytics.cassandra_store import (
     CassandraEventStore,
@@ -34,6 +35,19 @@ async def lifespan(_app: FastAPI):
 
 
 app = FastAPI(title="Event Ingestion Service", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        origin.strip()
+        for origin in os.environ.get(
+            "DASHBOARD_ORIGINS",
+            "http://localhost:8000,http://127.0.0.1:8000",
+        ).split(",")
+        if origin.strip()
+    ],
+    allow_methods=["GET"],
+    allow_headers=["Accept"],
+)
 
 
 @lru_cache(maxsize=1)
@@ -98,3 +112,13 @@ def recent_events(
         raise HTTPException(
             status_code=503, detail="Event store is unavailable"
         ) from exc
+
+
+def main() -> None:
+    import uvicorn
+
+    uvicorn.run(
+        app,
+        host=os.getenv("EVENT_HOST", "0.0.0.0"),
+        port=int(os.getenv("EVENT_PORT", "8002")),
+    )

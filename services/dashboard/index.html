@@ -132,6 +132,7 @@
         grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr);
         gap: 16px;
       }
+      .search-panel { grid-column: 1 / -1; }
       .panel { min-width: 0; min-height: 250px; padding: 21px 22px; }
       .panel-head {
         display: flex;
@@ -162,6 +163,13 @@
       }
       button:hover { background: #2868ae; }
       button:disabled { opacity: .6; cursor: wait; }
+      .data-form { align-items: flex-end; margin: 0 0 12px; }
+      .data-form label { display: grid; min-width: 150px; flex: 1; gap: 3px; color: var(--muted); font-size: 11px; }
+      .data-list { display: grid; gap: 7px; margin: 12px 0 0; padding: 0; list-style: none; }
+      .data-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 7px; }
+      .data-row strong { display: block; font-size: 12px; }
+      .data-row span { color: var(--muted); font-size: 11px; }
+      .data-score { white-space: nowrap; font-variant-numeric: tabular-nums; }
       ul { display: grid; gap: 7px; margin: 13px 0 0; padding: 0; list-style: none; }
       li {
         padding: 9px 11px;
@@ -205,6 +213,7 @@
         main { padding: 30px 25px 44px; }
         .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         .content-grid { grid-template-columns: 1fr; }
+        .search-panel { grid-column: auto; }
       }
       @media (max-width: 640px) {
         aside {
@@ -275,13 +284,13 @@
           <h2 class="section-title" id="metrics-title">At a glance</h2>
           <div class="metrics">
             <article class="card metric"><div class="metric-label">Products in catalog</div><div class="metric-value" id="product-count">—</div><div class="metric-foot" id="catalog-note">Loading catalog count…</div></article>
-            <article class="card metric" id="activity"><div class="metric-label">Event activity</div><div class="metric-value">—</div><div class="metric-foot">No live event metrics endpoint</div></article>
-            <article class="card metric" id="recommendations"><div class="metric-label">Recommendation metrics</div><div class="metric-value">—</div><div class="metric-foot">No live metrics endpoint</div></article>
+            <article class="card metric"><div class="metric-label">Recent events</div><div class="metric-value" id="event-count">—</div><div class="metric-foot" id="event-note">Load recent activity to see the count</div></article>
+            <article class="card metric"><div class="metric-label">Recommendations for visitor</div><div class="metric-value" id="recommendation-count">—</div><div class="metric-foot" id="recommendation-note">Request current recommendations</div></article>
             <article class="card metric"><div class="metric-label">Last search latency</div><div class="metric-value" id="search-latency">—</div><div class="metric-foot" id="search-note">Run a search to measure</div></article>
           </div>
         </section>
         <div class="content-grid" id="catalog">
-          <section class="card panel" aria-labelledby="search-title">
+          <section class="card panel search-panel" aria-labelledby="search-title">
             <div class="panel-head"><h2 id="search-title">Search the catalog</h2><span class="hint">Live Elasticsearch results</span></div>
             <form id="search-form">
               <input id="search-query" type="search" name="q" maxlength="200" placeholder="Search products" aria-label="Search products" required>
@@ -289,9 +298,21 @@
             </form>
             <div id="search-results" class="empty" role="status" aria-live="polite">Enter a term to search the live catalog.</div>
           </section>
-          <section class="card panel">
-            <div class="panel-head"><h2>Store activity</h2><span class="hint">Live data only</span></div>
-            <div class="empty"><div><strong>Not connected</strong><br>There is no event analytics endpoint in the product service yet.</div></div>
+          <section class="card panel" id="activity" aria-labelledby="activity-title">
+            <div class="panel-head"><h2 id="activity-title">Recent visitor activity</h2><span class="hint">Event service · Cassandra</span></div>
+            <form class="data-form" id="event-form">
+              <label for="event-user-id">Visitor ID<input id="event-user-id" type="number" min="1" step="1" required></label>
+              <button id="event-button" type="submit">Load activity</button>
+            </form>
+            <div id="event-results" class="empty" role="status" aria-live="polite">Enter a visitor ID to load its recorded events.</div>
+          </section>
+          <section class="card panel" id="recommendations" aria-labelledby="recommendation-title">
+            <div class="panel-head"><h2 id="recommendation-title">Personalized recommendations</h2><span class="hint">ALS · HBase</span></div>
+            <form class="data-form" id="recommendation-form">
+              <label for="recommendation-user-id">Visitor ID<input id="recommendation-user-id" type="text" maxlength="100" required></label>
+              <button id="recommendation-button" type="submit">Get recommendations</button>
+            </form>
+            <div id="recommendation-results" class="empty" role="status" aria-live="polite">Enter a visitor ID to request its recommendations.</div>
           </section>
         </div>
       </main>
@@ -306,6 +327,17 @@
       const query = document.querySelector("#search-query");
       const button = document.querySelector("#search-button");
       const results = document.querySelector("#search-results");
+      const eventForm = document.querySelector("#event-form");
+      const eventButton = document.querySelector("#event-button");
+      const eventResults = document.querySelector("#event-results");
+      const eventCount = document.querySelector("#event-count");
+      const eventNote = document.querySelector("#event-note");
+      const recommendationForm = document.querySelector("#recommendation-form");
+      const recommendationButton = document.querySelector("#recommendation-button");
+      const recommendationResults = document.querySelector("#recommendation-results");
+      const recommendationCount = document.querySelector("#recommendation-count");
+      const recommendationNote = document.querySelector("#recommendation-note");
+      const serviceUrl = (port) => `${location.protocol}//${location.hostname}:${port}`;
 
       async function loadCount() {
         try {
@@ -399,6 +431,108 @@
           results.textContent = "Search is unavailable. Check the product service and Elasticsearch.";
         } finally {
           button.disabled = false;
+        }
+      });
+
+      eventForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const userId = document.querySelector("#event-user-id").value.trim();
+        eventButton.disabled = true;
+        eventResults.className = "empty";
+        eventResults.textContent = "Loading recorded events…";
+        eventCount.textContent = "…";
+        eventNote.textContent = "Waiting for the event service";
+        try {
+          const response = await fetch(`${serviceUrl(8002)}/users/${encodeURIComponent(userId)}/events?limit=10`, {
+            headers: { Accept: "application/json" },
+          });
+          if (!response.ok) throw new Error("Event request failed");
+          const events = await response.json();
+          if (!Array.isArray(events)) throw new Error("Invalid event response");
+          eventCount.textContent = events.length.toLocaleString();
+          eventNote.textContent = `Recent records for visitor ${userId}`;
+          if (!events.length) {
+            eventResults.textContent = "No recorded events for this visitor.";
+            return;
+          }
+          const list = document.createElement("ul");
+          list.className = "data-list";
+          for (const item of events) {
+            const row = document.createElement("li");
+            const detail = document.createElement("div");
+            const kind = document.createElement("strong");
+            const product = document.createElement("span");
+            const time = document.createElement("span");
+            row.className = "data-row";
+            kind.textContent = String(item.event_type || "event").replaceAll("_", " ");
+            product.textContent = `Product ${item.product_id}`;
+            const date = new Date(item.occurred_at);
+            time.textContent = Number.isNaN(date.getTime()) ? String(item.occurred_at || "") : date.toLocaleString();
+            detail.append(kind, product);
+            row.append(detail, time);
+            list.append(row);
+          }
+          eventResults.className = "";
+          eventResults.replaceChildren(list);
+        } catch {
+          eventCount.textContent = "Unavailable";
+          eventNote.textContent = "Could not load visitor events";
+          eventResults.textContent = "Activity is unavailable. Check the event service and Cassandra.";
+        } finally {
+          eventButton.disabled = false;
+        }
+      });
+
+      recommendationForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const userId = document.querySelector("#recommendation-user-id").value.trim();
+        recommendationButton.disabled = true;
+        recommendationResults.className = "empty";
+        recommendationResults.textContent = "Loading recommendations…";
+        recommendationCount.textContent = "…";
+        recommendationNote.textContent = "Waiting for the recommendation service";
+        try {
+          const response = await fetch(`${serviceUrl(8003)}/recommendations/${encodeURIComponent(userId)}?n=5`, {
+            headers: { Accept: "application/json" },
+          });
+          if (response.status === 404) {
+            recommendationCount.textContent = "0";
+            recommendationNote.textContent = `No saved results for visitor ${userId}`;
+            recommendationResults.textContent = "No precomputed recommendations were found for this visitor.";
+            return;
+          }
+          if (!response.ok) throw new Error("Recommendation request failed");
+          const data = await response.json();
+          if (data.user_id !== userId || !Array.isArray(data.recommendations)) {
+            throw new Error("Invalid recommendation response");
+          }
+          recommendationCount.textContent = data.recommendations.length.toLocaleString();
+          recommendationNote.textContent = `ALS results for visitor ${userId}`;
+          if (!data.recommendations.length) {
+            recommendationResults.textContent = "No recommendations were returned.";
+            return;
+          }
+          const list = document.createElement("ul");
+          list.className = "data-list";
+          for (const item of data.recommendations) {
+            const row = document.createElement("li");
+            const product = document.createElement("strong");
+            const score = document.createElement("span");
+            row.className = "data-row";
+            product.textContent = `Product ${item.product_id}`;
+            score.className = "data-score";
+            score.textContent = Number.isFinite(item.score) ? `Score ${item.score.toFixed(3)}` : "Score unavailable";
+            row.append(product, score);
+            list.append(row);
+          }
+          recommendationResults.className = "";
+          recommendationResults.replaceChildren(list);
+        } catch {
+          recommendationCount.textContent = "Unavailable";
+          recommendationNote.textContent = "Could not load recommendations";
+          recommendationResults.textContent = "Recommendations are unavailable. Check the recommendation service and HBase.";
+        } finally {
+          recommendationButton.disabled = false;
         }
       });
       loadCount();
