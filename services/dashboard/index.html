@@ -3,8 +3,8 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#f5f7f6">
-    <title>Store overview</title>
+    <meta name="theme-color" content="#f4f7f6">
+    <title>E-commerce analytics</title>
     <style>
       :root {
         color-scheme: light;
@@ -16,6 +16,8 @@
         --accent: #247765;
         --accent-dark: #185e50;
         --soft: #e8f3ef;
+        --blue: #3976b8;
+        --orange: #bc7046;
         font: 14px/1.5 Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
       * { box-sizing: border-box; }
@@ -23,26 +25,19 @@
       a, button, input { font: inherit; }
       .layout { width: min(1320px, 100%); min-height: 100vh; margin: 0 auto; padding: 0 36px 56px; }
       aside { display: flex; min-height: 76px; align-items: center; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--line); }
-      .brand { display: flex; align-items: center; gap: 11px; margin: 0; color: var(--ink); text-decoration: none; }
+      .brand { display: flex; align-items: center; margin: 0; color: var(--ink); text-decoration: none; }
       .brand-copy { display: grid; line-height: 1.25; }
       .brand-copy strong { font-size: 13px; font-weight: 700; }
-      .brand-copy small { margin-top: 3px; color: var(--muted); font-size: 10px; }
-      .mark { display: grid; width: 36px; height: 36px; flex: 0 0 36px; place-items: center; border-radius: 11px; color: #fff; background: var(--accent); font-size: 11px; font-weight: 700; }
       .nav-label { display: none; }
       nav { display: flex; align-items: center; gap: 5px; }
       nav a { padding: 9px 12px; border-radius: 8px; color: var(--muted); font-size: 12px; text-decoration: none; transition: background-color .15s, color .15s; }
       nav a:hover, nav a[aria-current="page"] { color: var(--accent-dark); background: var(--soft); }
       main { padding: 0; }
-      .page-heading { margin-bottom: 24px; }
-      .topbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; color: var(--muted); font-size: 11px; }
-      .intro { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding: 34px 0 25px; }
-      .eyebrow { margin: 0 0 9px; color: var(--accent); font-size: 10px; font-weight: 750; letter-spacing: .14em; text-transform: uppercase; }
+      .page-heading { margin-bottom: 23px; }
+      .intro { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; padding: 34px 0 26px; }
       h1 { max-width: 720px; margin: 0; font-size: clamp(27px, 4vw, 38px); line-height: 1.12; letter-spacing: -.045em; }
       h2 { margin: 0; font-size: 14px; }
       .subtitle { max-width: 680px; margin: 11px 0 0; color: var(--muted); font-size: 13px; }
-      .intro-note { flex: 0 0 auto; padding: 8px 11px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--panel); font-size: 10px; }
-      .notice { display: flex; align-items: center; gap: 9px; min-height: 42px; margin-bottom: 22px; padding: 10px 13px; border: 1px solid #d9e9e3; border-radius: 9px; color: #365f53; background: #eff7f3; font-size: 11px; }
-      .notice[data-state="error"] { border-color: #f0d8d4; color: #8b3d32; background: #fff5f3; }
       .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin: 0 0 11px; }
       .section-title { margin: 0; font-size: 14px; font-weight: 650; }
       .section-copy { margin: 3px 0 0; color: var(--muted); font-size: 11px; }
@@ -81,7 +76,7 @@
       .empty { display: grid; min-height: 112px; place-content: center; color: var(--muted); text-align: center; font-size: 11px; }
       .empty strong { color: var(--ink); }
       .product-result { display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; align-items: center; gap: 12px; }
-      .product-photo { display: grid; width: 52px; height: 52px; place-items: center; overflow: hidden; border-radius: 7px; background: #f5f6f5; }
+      .product-photo { display: grid; width: 52px; height: 52px; place-items: center; overflow: hidden; border-radius: 7px; background: #f8fbf9; }
       .product-photo img { width: 100%; height: 100%; object-fit: contain; }
       .product-copy { min-width: 0; }
       .product-copy strong { overflow-wrap: anywhere; }
@@ -104,16 +99,12 @@
         aside { min-height: 0; align-items: flex-start; flex-direction: column; gap: 10px; padding: 12px 0 9px; }
         nav { width: 100%; gap: 4px; overflow-x: auto; overscroll-behavior-inline: contain; }
         nav a { display: flex; min-height: 39px; flex: 0 0 auto; align-items: center; padding: 8px 10px; font-size: 11px; }
-        .topbar { min-height: 0; }
         .intro { align-items: flex-start; flex-direction: column; gap: 13px; padding: 26px 0 20px; }
-        .intro-note { align-self: flex-start; }
         .section-head { align-items: flex-start; flex-direction: column; gap: 4px; }
         .panel { padding: 16px; }
       }
       @media (max-width: 400px) {
         .layout { padding-inline: 12px; }
-        .brand { gap: 8px; }
-        .mark { width: 31px; height: 31px; flex-basis: 31px; }
         nav a { padding-inline: 6px; font-size: 10px; }
         .metrics { grid-template-columns: 1fr; gap: 9px; }
         .metric { min-height: 101px; padding: 13px; }
@@ -133,21 +124,18 @@
   <body>
     <div class="layout">
       <aside aria-label="Main navigation">
-        <a class="brand" href="#overview"><span class="mark" aria-hidden="true">EC</span><span class="brand-copy"><strong>E-commerce analytics</strong><small>Store intelligence</small></span></a>
-        <p class="nav-label">Workspace</p>
+        <a class="brand" href="#overview"><span class="brand-copy"><strong>E-commerce analytics</strong></span></a>
         <nav>
           <a href="#overview" aria-current="page">Overview</a>
           <a href="#catalog">Catalog</a>
-          <a href="#activity">Activity</a>
           <a href="#recommendations">Recommendations</a>
+          <a href="#activity">Activity</a>
         </nav>
       </aside>
       <main id="overview">
         <header class="page-heading">
-          <div class="topbar"><span>Workspace&nbsp; / &nbsp;Overview</span><span>Amazon catalog&nbsp; · &nbsp;Live services</span></div>
-          <div class="intro"><div><p class="eyebrow">Store intelligence</p><h1>Commerce analytics</h1><p class="subtitle">Search real products, review visitor activity, and explore recommendations from the services behind this project.</p></div><span class="intro-note">Live service data</span></div>
+          <div class="intro"><div><h1>A clearer view of your catalog and activity</h1><p class="subtitle">Search the Amazon product catalog, inspect recommendations, and review real event history from the services behind this project.</p></div></div>
         </header>
-        <div id="connection" class="notice" role="status" aria-live="polite">Connecting to the catalog service…</div>
         <section aria-labelledby="metrics-title">
           <div class="section-head"><div><h2 class="section-title" id="metrics-title">At a glance</h2><p class="section-copy">Values appear as connected services return them.</p></div></div>
           <div class="metrics">
@@ -161,7 +149,7 @@
           <section class="card panel search-panel" aria-labelledby="search-title">
             <div class="panel-head"><div><h2 id="search-title">Product search</h2><p>Find real products indexed from the Amazon catalog.</p></div><span class="source">Elasticsearch</span></div>
             <form id="search-form">
-              <input id="search-query" type="search" name="q" maxlength="200" placeholder="Search products" aria-label="Search products" required>
+              <input id="search-query" type="search" name="q" maxlength="200" placeholder="Search product name or description" aria-label="Search products" required>
               <button id="search-button" type="submit">Search</button>
             </form>
             <div id="search-results" class="empty" role="status" aria-live="polite">Enter a term to search the live catalog.</div>
@@ -170,16 +158,16 @@
           <section class="card panel" id="recommendations" aria-labelledby="recommendation-title">
             <div class="panel-head"><div><h2 id="recommendation-title">Personalized recommendations</h2><p>Look up stored ALS results for a review user.</p></div><span class="source">ALS · HBase</span></div>
             <form class="data-form" id="recommendation-form">
-              <label for="recommendation-user-id">Visitor ID<input id="recommendation-user-id" type="text" maxlength="100" required></label>
-              <button id="recommendation-button" type="submit">Get recommendations</button>
+              <label for="recommendation-user-id">Review user ID<input id="recommendation-user-id" type="text" maxlength="100" placeholder="Amazon review user ID" autocomplete="off" required></label>
+              <button id="recommendation-button" type="submit">Look up</button>
             </form>
             <div id="recommendation-results" class="empty" role="status" aria-live="polite">Enter a visitor ID to request its recommendations.</div>
           </section>
         </div>
         <section class="card panel activity-panel" id="activity" aria-labelledby="activity-title">
-          <div class="panel-head"><div><h2 id="activity-title">Recent event history</h2><p>Persisted in Cassandra from the active Kafka event stream.</p></div><span class="source">Kafka · Cassandra</span></div>
+          <div class="panel-head"><div><h2 id="activity-title">Recent event history</h2><p>Persisted in Cassandra · inspect events for a user from the active Kafka stream.</p></div><span class="source">Kafka · Cassandra</span></div>
           <form class="data-form" id="event-form">
-            <label for="event-user-id">Visitor ID<input id="event-user-id" type="number" min="1" step="1" required></label>
+            <label for="event-user-id">Event user ID<input id="event-user-id" type="number" inputmode="numeric" min="1" step="1" placeholder="Event user ID" required></label>
             <button id="event-button" type="submit">Load activity</button>
           </form>
           <div id="event-results" class="empty" role="status" aria-live="polite">Enter a visitor ID to load its recorded events.</div>
@@ -189,7 +177,6 @@
     <script>
       const countEl = document.querySelector("#product-count");
       const catalogNote = document.querySelector("#catalog-note");
-      const connection = document.querySelector("#connection");
       const latency = document.querySelector("#search-latency");
       const searchNote = document.querySelector("#search-note");
       const form = document.querySelector("#search-form");
@@ -216,13 +203,9 @@
           if (!Number.isInteger(data.count) || data.count < 0) throw new Error("Invalid catalog count");
           countEl.textContent = data.count.toLocaleString();
           catalogNote.textContent = "Current MongoDB catalog count";
-          connection.textContent = "Catalog service connected";
-          connection.dataset.state = "ready";
         } catch {
           countEl.textContent = "Unavailable";
           catalogNote.textContent = "Could not load catalog count";
-          connection.textContent = "Catalog service is unavailable. Start the product service and MongoDB, then refresh.";
-          connection.dataset.state = "error";
         }
       }
 
