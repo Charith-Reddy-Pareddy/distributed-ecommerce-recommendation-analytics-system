@@ -90,6 +90,10 @@
       .activity-panel { margin-top: 14px; }
       .activity-panel .empty { min-height: 88px; }
       :focus-visible { outline: 3px solid #9bcdbd; outline-offset: 2px; }
+      @media (max-width: 480px) {
+        .data-row { align-items: flex-start; flex-direction: column; gap: 3px; }
+        .data-row > span { overflow-wrap: anywhere; }
+      }
       @media (max-width: 900px) {
         .layout { padding-inline: 24px; }
         .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -111,7 +115,7 @@
         .brand { gap: 8px; }
         .mark { width: 31px; height: 31px; flex-basis: 31px; }
         nav a { padding-inline: 6px; font-size: 10px; }
-        .metrics { gap: 9px; }
+        .metrics { grid-template-columns: 1fr; gap: 9px; }
         .metric { min-height: 101px; padding: 13px; }
         .metric-value { font-size: 20px; }
         .data-form { align-items: stretch; flex-direction: column; }
