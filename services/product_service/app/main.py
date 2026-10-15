@@ -8,6 +8,8 @@ from fastapi import Depends, FastAPI, HTTPException, Path as IdPath, Query, Requ
 from fastapi.staticfiles import StaticFiles
 from pymongo import AsyncMongoClient
 
+from ecommerce_analytics.dashboard_metrics import AmazonRatingDistribution
+from ecommerce_analytics.review_metrics import amazon_rating_distribution
 from services.product_service.app.catalog import MongoProductRepository, ProductRepository
 from services.product_service.app.schemas import ProductCreate, ProductOut
 from services.product_service.app.search import ElasticsearchProductIndex, ProductIndex
@@ -82,6 +84,16 @@ async def count_products(
     repository: ProductRepository = Depends(get_product_repository),
 ) -> dict[str, int]:
     return {"count": await repository.count()}
+
+
+@app.get("/metrics/amazon-ratings", response_model=AmazonRatingDistribution)
+def get_amazon_rating_distribution() -> AmazonRatingDistribution:
+    try:
+        return amazon_rating_distribution()
+    except (OSError, ValueError) as exc:
+        raise HTTPException(
+            status_code=503, detail="Amazon review data is unavailable"
+        ) from exc
 
 
 @app.get("/products/search", response_model=list[ProductOut])
