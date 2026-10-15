@@ -74,6 +74,12 @@
       .rating-summary dt { color: var(--muted); font-size: 10px; font-weight: 650; }
       .rating-summary dd { margin: 4px 0 0; font-size: 20px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
       .rating-summary dd span { color: var(--muted); font-size: 11px; font-weight: 550; }
+      .rating-chart { display: grid; gap: 9px; margin: 15px 0 0; padding: 0; list-style: none; }
+      .rating-chart-row { display: grid; grid-template-columns: 58px minmax(45px, 1fr) minmax(112px, auto); align-items: center; gap: 10px; padding: 0; border: 0; }
+      .rating-label { color: var(--muted); font-size: 11px; white-space: nowrap; }
+      .rating-track { height: 9px; overflow: hidden; border-radius: 999px; background: var(--soft); }
+      .rating-fill { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+      .rating-value { color: var(--ink); font-size: 11px; font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
       ul { display: grid; gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
       li { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; overflow-wrap: anywhere; }
       li strong { display: block; font-size: 12px; }
@@ -108,6 +114,7 @@
         .section-head { align-items: flex-start; flex-direction: column; gap: 4px; }
         .panel { padding: 16px; }
         .rating-summary > div { padding: 10px; }
+        .rating-chart-row { grid-template-columns: 50px minmax(32px, 1fr) minmax(100px, auto); gap: 7px; }
       }
       @media (max-width: 400px) {
         .layout { padding-inline: 12px; }
@@ -260,16 +267,27 @@
           ratingAverage.textContent = average.toFixed(2);
           ratingSummary.hidden = false;
           const list = document.createElement("ul");
-          list.className = "data-list";
+          list.className = "rating-chart";
+          list.setAttribute("aria-label", "Amazon review distribution by star rating");
           for (const bucket of buckets) {
             const row = document.createElement("li");
-            const rating = document.createElement("strong");
-            const count = document.createElement("span");
-            row.className = "data-row";
-            rating.textContent = `${bucket.rating} ${bucket.rating === 1 ? "star" : "stars"}`;
-            const share = (bucket.count / total * 100).toLocaleString(undefined, { maximumFractionDigits: 1 });
-            count.textContent = `${bucket.count.toLocaleString()} reviews · ${share}% of total`;
-            row.append(rating, count);
+            const share = bucket.count / total * 100;
+            const shareLabel = share.toLocaleString(undefined, { maximumFractionDigits: 1 });
+            const label = document.createElement("span");
+            const track = document.createElement("span");
+            const fill = document.createElement("span");
+            const value = document.createElement("span");
+            row.className = "rating-chart-row";
+            label.className = "rating-label";
+            track.className = "rating-track";
+            fill.className = "rating-fill";
+            value.className = "rating-value";
+            label.textContent = `${bucket.rating} ${bucket.rating === 1 ? "star" : "stars"}`;
+            fill.style.width = `${share}%`;
+            track.setAttribute("aria-hidden", "true");
+            track.append(fill);
+            value.textContent = `${bucket.count.toLocaleString()} · ${shareLabel}%`;
+            row.append(label, track, value);
             list.append(row);
           }
           ratingResults.className = "";
