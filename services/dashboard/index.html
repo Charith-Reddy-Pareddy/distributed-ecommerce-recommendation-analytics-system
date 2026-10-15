@@ -69,6 +69,11 @@
       .data-row strong { display: block; font-size: 12px; }
       .data-row span { color: var(--muted); font-size: 11px; }
       .data-score { white-space: nowrap; font-variant-numeric: tabular-nums; }
+      .rating-summary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; }
+      .rating-summary > div { min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 8px; background: #f8fbf9; }
+      .rating-summary dt { color: var(--muted); font-size: 10px; font-weight: 650; }
+      .rating-summary dd { margin: 4px 0 0; font-size: 20px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
+      .rating-summary dd span { color: var(--muted); font-size: 11px; font-weight: 550; }
       ul { display: grid; gap: 8px; margin: 14px 0 0; padding: 0; list-style: none; }
       li { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; overflow-wrap: anywhere; }
       li strong { display: block; font-size: 12px; }
@@ -102,6 +107,7 @@
         .intro { align-items: flex-start; flex-direction: column; gap: 13px; padding: 26px 0 20px; }
         .section-head { align-items: flex-start; flex-direction: column; gap: 4px; }
         .panel { padding: 16px; }
+        .rating-summary > div { padding: 10px; }
       }
       @media (max-width: 400px) {
         .layout { padding-inline: 12px; }
@@ -167,6 +173,10 @@
         </div>
         <section class="card panel activity-panel" id="ratings" aria-labelledby="ratings-title">
           <div class="panel-head"><div><h2 id="ratings-title">Amazon review ratings</h2><p>Counts from real Amazon review rows.</p></div><span class="source">Amazon Reviews 2023</span></div>
+          <dl id="rating-summary" class="rating-summary" hidden aria-label="Amazon review rating summary">
+            <div><dt>Reviews represented</dt><dd id="rating-total">—</dd></div>
+            <div><dt>Weighted average</dt><dd><span id="rating-average">—</span> <span>of 5 stars</span></dd></div>
+          </dl>
           <div id="rating-results" class="empty" role="status" aria-live="polite">Loading review ratings…</div>
         </section>
         <section class="card panel activity-panel" id="activity" aria-labelledby="activity-title">
@@ -199,6 +209,9 @@
       const recommendationCount = document.querySelector("#recommendation-count");
       const recommendationNote = document.querySelector("#recommendation-note");
       const ratingResults = document.querySelector("#rating-results");
+      const ratingSummary = document.querySelector("#rating-summary");
+      const ratingTotal = document.querySelector("#rating-total");
+      const ratingAverage = document.querySelector("#rating-average");
       const serviceUrl = (port) => `${location.protocol}//${location.hostname}:${port}`;
 
       async function loadCount() {
@@ -235,19 +248,27 @@
           ) {
             throw new Error("Invalid rating response");
           }
-          if (!data.buckets.length) {
+          const buckets = [...data.buckets].sort((a, b) => a.rating - b.rating);
+          const total = buckets.reduce((sum, bucket) => sum + bucket.count, 0);
+          if (!total) {
+            ratingSummary.hidden = true;
             ratingResults.textContent = "No Amazon review ratings are available.";
             return;
           }
+          const average = buckets.reduce((sum, bucket) => sum + bucket.rating * bucket.count, 0) / total;
+          ratingTotal.textContent = total.toLocaleString();
+          ratingAverage.textContent = average.toFixed(2);
+          ratingSummary.hidden = false;
           const list = document.createElement("ul");
           list.className = "data-list";
-          for (const bucket of [...data.buckets].sort((a, b) => a.rating - b.rating)) {
+          for (const bucket of buckets) {
             const row = document.createElement("li");
             const rating = document.createElement("strong");
             const count = document.createElement("span");
             row.className = "data-row";
             rating.textContent = `${bucket.rating} ${bucket.rating === 1 ? "star" : "stars"}`;
-            count.textContent = `${bucket.count.toLocaleString()} reviews`;
+            const share = (bucket.count / total * 100).toLocaleString(undefined, { maximumFractionDigits: 1 });
+            count.textContent = `${bucket.count.toLocaleString()} reviews · ${share}% of total`;
             row.append(rating, count);
             list.append(row);
           }
