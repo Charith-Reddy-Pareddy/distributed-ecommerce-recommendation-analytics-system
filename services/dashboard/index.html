@@ -128,6 +128,7 @@
         <nav>
           <a href="#overview" aria-current="page">Overview</a>
           <a href="#catalog">Catalog</a>
+          <a href="#ratings">Ratings</a>
           <a href="#recommendations">Recommendations</a>
           <a href="#activity">Activity</a>
         </nav>
@@ -164,6 +165,10 @@
             <div id="recommendation-results" class="empty" role="status" aria-live="polite">Enter a visitor ID to request its recommendations.</div>
           </section>
         </div>
+        <section class="card panel activity-panel" id="ratings" aria-labelledby="ratings-title">
+          <div class="panel-head"><div><h2 id="ratings-title">Amazon review ratings</h2><p>Counts from real Amazon review rows.</p></div><span class="source">Amazon Reviews 2023</span></div>
+          <div id="rating-results" class="empty" role="status" aria-live="polite">Loading review ratings…</div>
+        </section>
         <section class="card panel activity-panel" id="activity" aria-labelledby="activity-title">
           <div class="panel-head"><div><h2 id="activity-title">Recent event history</h2><p>Persisted in Cassandra · inspect events for a user from the active Kafka stream.</p></div><span class="source">Kafka · Cassandra</span></div>
           <form class="data-form" id="event-form">
@@ -193,6 +198,7 @@
       const recommendationResults = document.querySelector("#recommendation-results");
       const recommendationCount = document.querySelector("#recommendation-count");
       const recommendationNote = document.querySelector("#recommendation-note");
+      const ratingResults = document.querySelector("#rating-results");
       const serviceUrl = (port) => `${location.protocol}//${location.hostname}:${port}`;
 
       async function loadCount() {
@@ -206,6 +212,50 @@
         } catch {
           countEl.textContent = "Unavailable";
           catalogNote.textContent = "Could not load catalog count";
+        }
+      }
+
+      async function loadRatings() {
+        try {
+          const response = await fetch("/metrics/amazon-ratings", {
+            headers: { Accept: "application/json" },
+          });
+          if (!response.ok) throw new Error("Rating request failed");
+          const data = await response.json();
+          if (
+            data.source !== "amazon_reviews_2023" ||
+            !Array.isArray(data.buckets) ||
+            data.buckets.some((bucket) =>
+              !Number.isFinite(bucket.rating) ||
+              bucket.rating < 1 ||
+              bucket.rating > 5 ||
+              !Number.isInteger(bucket.count) ||
+              bucket.count < 0
+            )
+          ) {
+            throw new Error("Invalid rating response");
+          }
+          if (!data.buckets.length) {
+            ratingResults.textContent = "No Amazon review ratings are available.";
+            return;
+          }
+          const list = document.createElement("ul");
+          list.className = "data-list";
+          for (const bucket of [...data.buckets].sort((a, b) => a.rating - b.rating)) {
+            const row = document.createElement("li");
+            const rating = document.createElement("strong");
+            const count = document.createElement("span");
+            row.className = "data-row";
+            rating.textContent = `${bucket.rating} ${bucket.rating === 1 ? "star" : "stars"}`;
+            count.textContent = `${bucket.count.toLocaleString()} reviews`;
+            row.append(rating, count);
+            list.append(row);
+          }
+          ratingResults.className = "";
+          ratingResults.replaceChildren(list);
+        } catch {
+          ratingResults.className = "empty";
+          ratingResults.textContent = "Ratings are unavailable. Check the real review data path and product service.";
         }
       }
 
@@ -388,6 +438,7 @@
         }
       });
       loadCount();
+      loadRatings();
     </script>
   </body>
 </html>
