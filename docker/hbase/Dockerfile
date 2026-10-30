@@ -11,8 +11,15 @@ RUN apt-get update \
     && useradd --system --gid hbase --home-dir /data/hbase hbase
 
 WORKDIR /opt
-RUN curl -fsSLO "https://downloads.apache.org/hbase/${HBASE_VERSION}/hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz" \
-    && curl -fsSLO "https://downloads.apache.org/hbase/${HBASE_VERSION}/hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz.sha512" \
+RUN download() { \
+        curl --fail --show-error --location --retry 4 --retry-all-errors \
+            --retry-delay 2 --connect-timeout 30 --continue-at - \
+            --output "$1" "$2"; \
+    } \
+    && download "hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz" \
+        "https://downloads.apache.org/hbase/${HBASE_VERSION}/hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz" \
+    && download "hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz.sha512" \
+        "https://downloads.apache.org/hbase/${HBASE_VERSION}/hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz.sha512" \
     && expected="$(sed 's/^[^:]*: *//' "hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz.sha512" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')" \
     && actual="$(sha512sum "hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz" | cut -d ' ' -f 1)" \
     && test "${#expected}" -eq 128 \
