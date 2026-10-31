@@ -12,14 +12,23 @@ RUN apt-get update \
 
 WORKDIR /opt
 RUN download() { \
-        curl --fail --show-error --location --retry 4 --retry-all-errors \
-            --retry-delay 2 --connect-timeout 30 --continue-at - \
-            --output "$1" "$2"; \
+        file="$1"; url="$2"; attempt=1; \
+        while :; do \
+            if curl --fail --show-error --location --connect-timeout 30 \
+                --speed-limit 1024 --speed-time 180 --continue-at - \
+                --output "$file" "$url"; then \
+                return 0; \
+            fi; \
+            if [ "$attempt" -ge 5 ]; then return 1; fi; \
+            echo "Download interrupted; resuming $file (retry $attempt/4)" >&2; \
+            sleep "$attempt"; \
+            attempt=$((attempt + 1)); \
+        done; \
     } \
     && download "hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz" \
-        "https://downloads.apache.org/hbase/${HBASE_VERSION}/hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz" \
+        "https://dlcdn.apache.org/hbase/${HBASE_VERSION}/hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz" \
     && download "hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz.sha512" \
-        "https://downloads.apache.org/hbase/${HBASE_VERSION}/hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz.sha512" \
+        "https://dlcdn.apache.org/hbase/${HBASE_VERSION}/hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz.sha512" \
     && expected="$(sed 's/^[^:]*: *//' "hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz.sha512" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')" \
     && actual="$(sha512sum "hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz" | cut -d ' ' -f 1)" \
     && test "${#expected}" -eq 128 \
