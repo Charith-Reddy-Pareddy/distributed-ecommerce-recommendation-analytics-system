@@ -120,12 +120,34 @@ def evaluate_reviews(
         ).fit(indexed_train)
 
         users = indexed_targets.select("user_idx").distinct()
-        recommendations = als.recommendForUserSubset(users, top_k).select(
+        seen = (
+            indexed_train.select("user_idx", "product_id")
+            .distinct()
+            .join(users, "user_idx", "inner")
+        )
+
+        max_seen = (
+            seen.groupBy("user_idx")
+            .count()
+            .agg(F.max("count").alias("max_seen"))
+            .first()["max_seen"]
+            or 0
+        )
+        train_item_count = train.select("product_id").distinct().count()
+        candidate_k = min(train_item_count, top_k + max_seen)
+        recommendations = als.recommendForUserSubset(users, candidate_k).select(
             "user_idx", F.posexplode("recommendations").alias("pos", "rec")
         ).select(
             "user_idx", "pos", F.col("rec.product_id").alias("product_id")
         )
-        als_hits = recommendations.join(
+        als_unseen = recommendations.join(
+            seen, ["user_idx", "product_id"], "left_anti"
+        )
+        user_rank = Window.partitionBy("user_idx").orderBy("pos")
+        als_unseen = als_unseen.withColumn(
+            "pos", F.row_number().over(user_rank) - 1
+        ).filter(F.col("pos") < top_k)
+        als_hits = als_unseen.join(
             indexed_targets.select("user_idx", "product_id"),
             ["user_idx", "product_id"],
         )
@@ -137,14 +159,22 @@ def evaluate_reviews(
             train.groupBy("product_id")
             .agg(F.count(F.lit(1)).alias("train_count"))
             .orderBy(F.col("train_count").desc(), F.col("product_id"))
-            .limit(top_k)
+            .limit(candidate_k)
             .collect()
         )
         popular = spark.createDataFrame(
             [(row.product_id, pos) for pos, row in enumerate(popular_rows)],
             ["product_id", "pos"],
         )
-        popular_hits = indexed_targets.join(popular, "product_id", "inner")
+        popular_unseen = users.crossJoin(popular).join(
+            seen, ["user_idx", "product_id"], "left_anti"
+        )
+        popular_unseen = popular_unseen.withColumn(
+            "pos", F.row_number().over(user_rank) - 1
+        ).filter(F.col("pos") < top_k)
+        popular_hits = indexed_targets.join(
+            popular_unseen, ["user_idx", "product_id"], "inner"
+        )
 
         def metrics(hits: Any, score_col: str | None = None) -> dict[str, float]:
             hit_count = hits.select("user_id" if "user_id" in hits.columns else "user_idx").distinct().count()
@@ -162,8 +192,14 @@ def evaluate_reviews(
 
         als_result = metrics(als_scored, "dcg")
         popular_result = metrics(popular_hits)
-        als_coverage = recommendations.select("product_id").distinct().count() / len(catalog_map)
-        popular_coverage = len(popular_rows) / len(catalog_map)
+        als_seen_count = als_unseen.join(
+            seen, ["user_idx", "product_id"], "inner"
+        ).count()
+        popular_seen_count = popular_unseen.join(
+            seen, ["user_idx", "product_id"], "inner"
+        ).count()
+        als_coverage = als_unseen.select("product_id").distinct().count() / len(catalog_map)
+        popular_coverage = popular_unseen.select("product_id").distinct().count() / len(catalog_map)
 
         return {
             "source_file": Path(reviews_path).name,
@@ -174,6 +210,9 @@ def evaluate_reviews(
             "user_sample_percent": user_sample_percent,
             "als_iterations": max_iter,
             "top_k": top_k,
+            "candidate_pool_size": candidate_k,
+            "als_seen_items_after_filter": als_seen_count,
+            "popularity_seen_items_after_filter": popular_seen_count,
             "catalog_products": len(catalog_map),
             "als": {**als_result, f"catalog_coverage_at_{top_k}": als_coverage},
             "popularity": {

@@ -34,3 +34,6 @@ def test_als_evaluation_on_real_reviews() -> None:
         assert 0 <= result[method]["catalog_coverage_at_10"] <= 1
     assert result["user_sample_percent"] == 1
     assert result["als_iterations"] == 2
+    assert result["candidate_pool_size"] >= result["top_k"]
+    assert result["als_seen_items_after_filter"] == 0
+    assert result["popularity_seen_items_after_filter"] == 0
