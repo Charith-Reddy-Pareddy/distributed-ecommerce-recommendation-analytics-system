@@ -21,6 +21,22 @@ Computed from the real Amazon Reviews 2023 extract and the project's real ASIN-t
 | ALS | 0.0129 | 0.0066 | 2.49% |
 | Popularity | 0.0227 | 0.0121 | 0.18% |
 
+## Reading the results
+
+On this pilot, popularity has higher ranking quality: Recall@10 is 2.27% versus
+1.29% for ALS, a difference of 0.98 percentage points. NDCG@10 is 1.21% versus
+0.66%, a difference of 0.55 points. ALS covers more of the mapped catalog
+(2.49% versus 0.18%), so it offers broader item exposure here while matching
+fewer held-out targets near the top of the list. These differences are
+approximate because the table values are rounded.
+
+This is a descriptive comparison, not a significance test. It uses one
+deterministic 1% user sample, one latest-review holdout per eligible user, and
+two ALS iterations. It does not show whether the quality gap persists across
+samples, training settings, or a full-data run. For this setup, popularity is
+the stronger quality baseline; ALS's higher catalog coverage is a separate
+tradeoff, not evidence that it recommends better.
+
 ## Method and limits
 
 The latest mapped review for each user is held out. Earlier rows form training data; repeated rows for the held-out user-item pair are removed from training. Only held-out ratings meeting the threshold count as relevant. Both methods draw from training products, remove each user's training products, then take the first K remaining products. ALS uses the project's implicit-feedback settings and fixed seed; popularity ranks the training products by interaction count. The candidate pool is enlarged by the largest per-user seen set so filtering can still yield K recommendations when enough products are available.
