@@ -17,7 +17,7 @@ def test_als_evaluation_on_real_reviews() -> None:
         pytest.skip("set Amazon review and catalog-map paths for the real ALS evaluation")
 
     from ecommerce_analytics.als_export import load_catalog_map
-    from ecommerce_analytics.recommendation_evaluation import evaluate_reviews
+    from ecommerce_analytics.recommendation_evaluation import evaluate_reviews, render_report
 
     result = evaluate_reviews(
         reviews,
@@ -37,3 +37,7 @@ def test_als_evaluation_on_real_reviews() -> None:
     assert result["candidate_pool_size"] >= result["top_k"]
     assert result["als_seen_items_after_filter"] == 0
     assert result["popularity_seen_items_after_filter"] == 0
+    report = render_report(result)
+    assert "Both methods draw from training products" in report
+    assert "Seen items returned after filtering (ALS / popularity): 0 / 0" in report
+    assert "--user-sample-percent 1 --max-iter 2" in report

@@ -209,11 +209,16 @@ def evaluate_reviews(
             "relevant_rating_threshold": relevant_rating,
             "user_sample_percent": user_sample_percent,
             "als_iterations": max_iter,
+            "als_rank": 10,
+            "als_reg_param": 0.1,
+            "als_alpha": 1.0,
+            "als_seed": 42,
             "top_k": top_k,
             "candidate_pool_size": candidate_k,
             "als_seen_items_after_filter": als_seen_count,
             "popularity_seen_items_after_filter": popular_seen_count,
             "catalog_products": len(catalog_map),
+            "spark_version": spark.version,
             "als": {**als_result, f"catalog_coverage_at_{top_k}": als_coverage},
             "popularity": {
                 **popular_result,
@@ -239,8 +244,11 @@ def render_report(result: dict[str, Any]) -> str:
         f"- Held-out rule: {result['held_out_rule']}",
         f"- Relevance threshold: rating >= {result['relevant_rating_threshold']}",
         f"- User sample: {result['user_sample_percent']}% selected deterministically by user ID hash; all source rows for selected users are retained",
-        f"- ALS iterations: {result['als_iterations']}",
+        f"- ALS: rank {result['als_rank']}, {result['als_iterations']} iterations, regParam {result['als_reg_param']}, alpha {result['als_alpha']}, seed {result['als_seed']}",
+        f"- Spark version: {result['spark_version']}",
         f"- Catalog size used for coverage: {result['catalog_products']:,} mapped products",
+        f"- Candidate pool per method before seen-item filtering: up to {result['candidate_pool_size']:,}",
+        f"- Seen items returned after filtering (ALS / popularity): {result['als_seen_items_after_filter']} / {result['popularity_seen_items_after_filter']}",
         "",
         f"## Results at K={k}",
         "",
@@ -263,16 +271,32 @@ def render_report(result: dict[str, Any]) -> str:
             "The latest mapped review for each user is held out. Earlier rows form "
             "training data; repeated rows for the held-out user-item pair are removed "
             "from training. Only held-out ratings meeting the threshold count as "
-            "relevant. ALS uses the project's implicit-feedback settings and fixed "
-            "seed. The popularity baseline ranks products by training-row count and "
-            "uses the same global top-K list for each user without per-user seen-item "
-            "filtering, so treat it as a simple exploratory baseline.",
+            "relevant. Both methods draw from training products, remove each user's "
+            "training products, then take the first K remaining products. ALS uses "
+            "the project's implicit-feedback settings and fixed seed; popularity "
+            "ranks the training products by interaction count. The candidate pool "
+            "is enlarged by the largest per-user seen set so filtering can still "
+            "yield K recommendations when enough products are available.",
             "",
-            "This is an offline pilot on the disclosed user sample, not a full-catalog "
-            "evaluation, online experiment, or evidence of sales impact. The ALS and "
-            "popularity candidate filtering differ. The split and relevance threshold affect "
-            "the result; compare future model changes using the same source and "
-            "settings. Results do not generalize to RetailRocket or application events.",
+            "This is an offline evaluation on a deterministic user sample, not an "
+            "online experiment or evidence of sales impact. The per-user latest-review "
+            "split and relevance threshold affect results; compare model changes using "
+            "the same source and settings. Results do not generalize to RetailRocket "
+            "or application events.",
+            "",
+            "## Reproduce",
+            "",
+            "Set `AMAZON_REVIEWS_PATH` and `AMAZON_CATALOG_MAP_PATH` to the real local "
+            "files, then run:",
+            "",
+            "```sh",
+            "PYTHONPATH=src .venv/bin/python -m ecommerce_analytics.recommendation_evaluation \\",
+            "  --reviews \"$AMAZON_REVIEWS_PATH\" \\",
+            "  --catalog-map \"$AMAZON_CATALOG_MAP_PATH\" \\",
+            "  --output docs/recommendation_evaluation.md \\",
+            f"  --top-k {k} --relevant-rating {result['relevant_rating_threshold']} \\",
+            f"  --user-sample-percent {result['user_sample_percent']} --max-iter {result['als_iterations']}",
+            "```",
             "",
         ]
     )
