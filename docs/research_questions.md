@@ -6,7 +6,7 @@ This first research brief uses only the real Amazon Reviews 2023 extract and the
 
 1. **How are submitted ratings distributed?** Count review rows at each rating from 1 to 5, and report the total number of source rows. The source fields are `rating` and `asin`; the available dashboard endpoint currently reports rating counts.
 2. **How do rating volume and average rating vary by product?** Group real reviews by `asin`, report the review count alongside the average rating, and avoid treating a small number of reviews as equally reliable as a large number. The source fields are `asin`, `rating`, and `timestamp`.
-3. **Do ALS recommendations improve on a popularity baseline for held-out reviews?** Use a time-ordered train/test split based on `timestamp`; compare Recall@K and NDCG@K against recommending the most-reviewed products, and report catalog coverage. This is a proposed evaluation, not a result: the current ALS export does not yet calculate these metrics or compare a baseline.
+3. **Do ALS recommendations improve on a popularity baseline for held-out reviews?** Compare Recall@K and NDCG@K against recommending the most-reviewed products, and report catalog coverage. A deterministic 1% pilot using per-user latest-review holdout and shared seen-item filtering is recorded in [the evaluation report](recommendation_evaluation.md). It is an initial result, not a full-data or statistical-significance claim.
 
 Amazon's available review fields are `user_id`, `asin`, `rating`, and `timestamp`. The project's ASIN-to-product-ID map may be used for model inputs, but an ASIN is not itself a mapped `product_id`.
 
