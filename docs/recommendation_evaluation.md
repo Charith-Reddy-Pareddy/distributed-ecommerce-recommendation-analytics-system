@@ -47,6 +47,14 @@ This is an offline evaluation on a deterministic user sample, not an online expe
 
 On 2026-11-04, the documented command could not reproduce the saved metrics in the current checkout. The real review CSV and ASIN-to-product map were not available in the Desktop or project workspace, and the corresponding path variables were unset. With `PYTHONPATH=src` set, the evaluation stopped while loading the missing catalog map, before Spark training began. The metrics above are from the prior pilot run; this attempt neither reproduces nor refutes them. Re-run after both real input files are available.
 
+## Final verification
+
+The local suite completed with 66 passed and 7 skipped. Its skipped checks need the real Amazon review CSV and ID map or integration services that were unavailable locally. The HBase image could not be built on this machine because the Docker Desktop engine was not running.
+
+[GitHub Actions run 58](https://github.com/Charith-Reddy-Pareddy/distributed-ecommerce-recommendation-analytics-system/actions/runs/41874646509) built HBase, reported MongoDB, Elasticsearch, and HBase healthy, then completed the suite with 66 passed and 7 skipped in 2.36 seconds. The log does not give individual skip reasons. The HBase archive download took about 28 minutes: the primary mirror stalled, and the fallback mirror completed a resumed download. The archive passed the SHA-512 check.
+
+The evaluation metrics remain unreproduced. The review CSV and ASIN-to-product map were absent from this checkout, so no new model results or comparison were produced. Re-run the documented command when the same real input files are available.
+
 ## Reproduce
 
 Set `AMAZON_REVIEWS_PATH` and `AMAZON_CATALOG_MAP_PATH` to the real local files, then run:
