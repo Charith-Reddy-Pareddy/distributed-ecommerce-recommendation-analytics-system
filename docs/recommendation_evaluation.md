@@ -43,6 +43,10 @@ The latest mapped review for each user is held out. Earlier rows form training d
 
 This is an offline evaluation on a deterministic user sample, not an online experiment or evidence of sales impact. The per-user latest-review split and relevance threshold affect results; compare model changes using the same source and settings. Results do not generalize to RetailRocket or application events.
 
+## Reproducibility check
+
+On 2026-11-04, the documented command could not reproduce the saved metrics in the current checkout. The real review CSV and ASIN-to-product map were not available in the Desktop or project workspace, and the corresponding path variables were unset. With `PYTHONPATH=src` set, the evaluation stopped while loading the missing catalog map, before Spark training began. The metrics above are from the prior pilot run; this attempt neither reproduces nor refutes them. Re-run after both real input files are available.
+
 ## Reproduce
 
 Set `AMAZON_REVIEWS_PATH` and `AMAZON_CATALOG_MAP_PATH` to the real local files, then run:
