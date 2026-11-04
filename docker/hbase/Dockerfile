@@ -11,24 +11,13 @@ RUN apt-get update \
     && useradd --system --gid hbase --home-dir /data/hbase hbase
 
 WORKDIR /opt
-RUN download() { \
-        file="$1"; url="$2"; attempt=1; \
-        while :; do \
-            if curl --fail --show-error --location --connect-timeout 30 \
-                --speed-limit 1024 --speed-time 180 --continue-at - \
-                --output "$file" "$url"; then \
-                return 0; \
-            fi; \
-            if [ "$attempt" -ge 5 ]; then return 1; fi; \
-            echo "Download interrupted; resuming $file (retry $attempt/4)" >&2; \
-            sleep "$attempt"; \
-            attempt=$((attempt + 1)); \
-        done; \
-    } \
-    && download "hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz" \
+COPY download-release.sh /usr/local/bin/download-release
+RUN sh /usr/local/bin/download-release "hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz" \
         "https://dlcdn.apache.org/hbase/${HBASE_VERSION}/hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz" \
-    && download "hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz.sha512" \
-        "https://dlcdn.apache.org/hbase/${HBASE_VERSION}/hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz.sha512" \
+        "https://apache.uib.no/hbase/${HBASE_VERSION}/hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz" \
+        "https://mirrors.aliyun.com/apache/hbase/${HBASE_VERSION}/hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz" \
+    && sh /usr/local/bin/download-release "hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz.sha512" \
+        "https://downloads.apache.org/hbase/${HBASE_VERSION}/hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz.sha512" \
     && expected="$(sed 's/^[^:]*: *//' "hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz.sha512" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')" \
     && actual="$(sha512sum "hbase-${HBASE_VERSION}-hadoop3-bin.tar.gz" | cut -d ' ' -f 1)" \
     && test "${#expected}" -eq 128 \
