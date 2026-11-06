@@ -14,7 +14,12 @@ class RatingPredictions(NamedTuple):
     estimator: Any
 
 
-def fit_rating_model(matrix: RatingMatrix) -> RatingPredictions:
+def fit_rating_model(
+    matrix: RatingMatrix,
+    seed: int = 42,
+    num_trees: int = 30,
+    max_depth: int = 6,
+) -> RatingPredictions:
     """Fit a random forest on train rows and predict the held-out test rows."""
     from pyspark.ml.feature import VectorAssembler
     from pyspark.ml.regression import RandomForestRegressor
@@ -22,6 +27,12 @@ def fit_rating_model(matrix: RatingMatrix) -> RatingPredictions:
 
     if not matrix.features:
         raise ValueError("rating matrix has no model features")
+    if type(seed) is not int or seed < 0:
+        raise ValueError("seed must be a non-negative integer")
+    if type(num_trees) is not int or num_trees < 1:
+        raise ValueError("num_trees must be a positive integer")
+    if type(max_depth) is not int or max_depth < 1:
+        raise ValueError("max_depth must be a positive integer")
 
     assembler = VectorAssembler(
         inputCols=list(matrix.features),
@@ -34,9 +45,9 @@ def fit_rating_model(matrix: RatingMatrix) -> RatingPredictions:
         featuresCol="features",
         labelCol="rating",
         predictionCol="prediction",
-        numTrees=30,
-        maxDepth=6,
-        seed=42,
+        numTrees=num_trees,
+        maxDepth=max_depth,
+        seed=seed,
     )
     model = estimator.fit(train)
     predicted = model.transform(test)
