@@ -38,8 +38,8 @@ def fit_rating_model(matrix: RatingMatrix) -> RatingPredictions:
         seed=42,
     )
     model = estimator.fit(train)
-    predictions = model.transform(test).select("rating", "prediction")
-    baseline = matrix.test.select("rating").withColumn(
+    predictions = model.transform(test).select("rating", "review_month", "prediction")
+    baseline = matrix.test.select("rating", "review_month").withColumn(
         "prediction", F.lit(matrix.baseline_mean)
     )
     return RatingPredictions(baseline=baseline, model=predictions, estimator=model)
