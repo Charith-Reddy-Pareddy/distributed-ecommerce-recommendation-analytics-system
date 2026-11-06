@@ -10,6 +10,7 @@ from ecommerce_analytics.rating_matrix import RatingMatrix
 class RatingPredictions(NamedTuple):
     baseline: Any
     model: Any
+    paired: Any
     estimator: Any
 
 
@@ -38,8 +39,20 @@ def fit_rating_model(matrix: RatingMatrix) -> RatingPredictions:
         seed=42,
     )
     model = estimator.fit(train)
-    predictions = model.transform(test).select("rating", "review_month", "prediction")
+    predicted = model.transform(test)
+    predictions = predicted.select("rating", "review_month", "prediction")
     baseline = matrix.test.select("rating", "review_month").withColumn(
         "prediction", F.lit(matrix.baseline_mean)
     )
-    return RatingPredictions(baseline=baseline, model=predictions, estimator=model)
+    paired = predicted.select(
+        "rating",
+        "review_month",
+        F.lit(matrix.baseline_mean).alias("baseline_prediction"),
+        F.col("prediction").alias("model_prediction"),
+    )
+    return RatingPredictions(
+        baseline=baseline,
+        model=predictions,
+        paired=paired,
+        estimator=model,
+    )
