@@ -47,8 +47,11 @@ def build_rating_split(reviews: Any, cutoff_ts: int) -> RatingSplit:
         F.lit(False),
     )
     excluded = rows.filter(~valid)
+    # Amazon Reviews 2023 stores timestamps in milliseconds, while Spark's
+    # from_unixtime expects seconds. Keep the original value for split ordering.
     rows = rows.filter(valid).withColumn(
-        "review_month", F.month(F.to_timestamp(F.from_unixtime("timestamp")))
+        "review_month",
+        F.month(F.to_timestamp(F.from_unixtime(F.floor(F.col("timestamp") / 1000)))),
     )
 
     train_src = rows.filter(F.col("timestamp") < cutoff_ts)

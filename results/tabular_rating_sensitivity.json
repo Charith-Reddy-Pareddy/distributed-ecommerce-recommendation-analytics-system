@@ -1,0 +1,148 @@
+{
+  "config": {
+    "cutoffs": [
+      0.7,
+      0.8,
+      0.9
+    ],
+    "features": [
+      "user_review_count_before",
+      "user_mean_rating_before",
+      "item_review_count_before",
+      "item_mean_rating_before",
+      "review_month"
+    ],
+    "max_depth": 6,
+    "num_trees": 30,
+    "relative_error": 0.01,
+    "seeds": [
+      42,
+      7,
+      17
+    ],
+    "spark_version": "4.2.1",
+    "split": "global timestamp quantile; train before cutoff, test at or after",
+    "timezone": "UTC"
+  },
+  "runs": [
+    {
+      "baseline_mae": 1.3929418854172984,
+      "baseline_rmse": 1.5878174765898276,
+      "cutoff_quantile": 0.7,
+      "cutoff_timestamp": 1617386850904,
+      "max_depth": 6,
+      "model_mae": 1.3663003690650144,
+      "model_rmse": 1.569650162035713,
+      "num_trees": 30,
+      "seed": 42,
+      "test_rows": 5008,
+      "train_rows": 11208
+    },
+    {
+      "baseline_mae": 1.3929418854172984,
+      "baseline_rmse": 1.5878174765898276,
+      "cutoff_quantile": 0.7,
+      "cutoff_timestamp": 1617386850904,
+      "max_depth": 6,
+      "model_mae": 1.3645723858998118,
+      "model_rmse": 1.5655052135306669,
+      "num_trees": 30,
+      "seed": 7,
+      "test_rows": 5008,
+      "train_rows": 11208
+    },
+    {
+      "baseline_mae": 1.3929418854172984,
+      "baseline_rmse": 1.5878174765898276,
+      "cutoff_quantile": 0.7,
+      "cutoff_timestamp": 1617386850904,
+      "max_depth": 6,
+      "model_mae": 1.3634306816073822,
+      "model_rmse": 1.5649333858871413,
+      "num_trees": 30,
+      "seed": 17,
+      "test_rows": 5008,
+      "train_rows": 11208
+    },
+    {
+      "baseline_mae": 1.3944020864403865,
+      "baseline_rmse": 1.5788919720561603,
+      "cutoff_quantile": 0.8,
+      "cutoff_timestamp": 1629235117268,
+      "max_depth": 6,
+      "model_mae": 1.378054201915954,
+      "model_rmse": 1.5568842376273624,
+      "num_trees": 30,
+      "seed": 42,
+      "test_rows": 3367,
+      "train_rows": 12849
+    },
+    {
+      "baseline_mae": 1.3944020864403865,
+      "baseline_rmse": 1.5788919720561603,
+      "cutoff_quantile": 0.8,
+      "cutoff_timestamp": 1629235117268,
+      "max_depth": 6,
+      "model_mae": 1.3776620094400645,
+      "model_rmse": 1.5592689939163933,
+      "num_trees": 30,
+      "seed": 7,
+      "test_rows": 3367,
+      "train_rows": 12849
+    },
+    {
+      "baseline_mae": 1.3944020864403865,
+      "baseline_rmse": 1.5788919720561603,
+      "cutoff_quantile": 0.8,
+      "cutoff_timestamp": 1629235117268,
+      "max_depth": 6,
+      "model_mae": 1.3770113606561898,
+      "model_rmse": 1.5585632290281595,
+      "num_trees": 30,
+      "seed": 17,
+      "test_rows": 3367,
+      "train_rows": 12849
+    },
+    {
+      "baseline_mae": 1.3790382669802126,
+      "baseline_rmse": 1.55857523875443,
+      "cutoff_quantile": 0.9,
+      "cutoff_timestamp": 1649708537362,
+      "max_depth": 6,
+      "model_mae": 1.3367077321904928,
+      "model_rmse": 1.5236749651947539,
+      "num_trees": 30,
+      "seed": 42,
+      "test_rows": 1784,
+      "train_rows": 14432
+    },
+    {
+      "baseline_mae": 1.3790382669802126,
+      "baseline_rmse": 1.55857523875443,
+      "cutoff_quantile": 0.9,
+      "cutoff_timestamp": 1649708537362,
+      "max_depth": 6,
+      "model_mae": 1.3344673429529326,
+      "model_rmse": 1.5206330372797887,
+      "num_trees": 30,
+      "seed": 7,
+      "test_rows": 1784,
+      "train_rows": 14432
+    },
+    {
+      "baseline_mae": 1.3790382669802126,
+      "baseline_rmse": 1.55857523875443,
+      "cutoff_quantile": 0.9,
+      "cutoff_timestamp": 1649708537362,
+      "max_depth": 6,
+      "model_mae": 1.3387101583656498,
+      "model_rmse": 1.5240140736823866,
+      "num_trees": 30,
+      "seed": 17,
+      "test_rows": 1784,
+      "train_rows": 14432
+    }
+  ],
+  "source_file": "amazon_reviews_2023_subscription_boxes.jsonl.gz",
+  "source_sha256": "640a26e1a77a59245d11e98e3c0fd300815ede6f9c670932609bf2c672ea0fde"
+}

@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, NamedTuple, Sequence
 
 from ecommerce_analytics.rating_evaluation import evaluate_rating_predictions
-from ecommerce_analytics.rating_matrix import build_rating_matrix
+from ecommerce_analytics.rating_matrix import FEATURES, build_rating_matrix
 from ecommerce_analytics.rating_model import fit_rating_model
 from ecommerce_analytics.tabular_rating import build_rating_split
 
@@ -161,6 +161,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = {
             "source_file": path.name,
             "source_sha256": _sha256(path),
+            "config": {
+                "cutoffs": args.cutoffs,
+                "seeds": args.seeds,
+                "num_trees": args.trees,
+                "max_depth": args.depth,
+                "relative_error": args.relative_error,
+                "spark_version": spark.version,
+                "timezone": "UTC",
+                "features": list(FEATURES),
+                "split": "global timestamp quantile; train before cutoff, test at or after",
+            },
             "runs": [run._asdict() for run in runs],
         }
         output = json.dumps(result, indent=2, sort_keys=True) + "\n"
