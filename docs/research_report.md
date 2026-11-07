@@ -61,3 +61,15 @@ The ratings are concentrated at five stars (71.34%), so the high weighted mean s
 The recommendation comparison is also descriptive, not a significance test. It uses a deterministic 1% user sample, one latest-review holdout per eligible user, a relevance threshold of 4.0, and two ALS iterations. The current results do not establish how the difference changes with a larger sample, different training settings, or full-data evaluation. Popularity is the stronger quality baseline under this pilot protocol; ALS's higher coverage is a separate exposure tradeoff, not evidence of better ranking quality.
 
 RetailRocket-backed and global application-event analyses remain unavailable: the real RetailRocket files are absent from the inspected checkout and the Cassandra API does not expose global event aggregates. Those questions need their real inputs or an aggregate endpoint before they can be evaluated.
+
+## Tabular rating sensitivity
+
+The sensitivity analysis used 16,216 real Subscription Boxes reviews at the 70th, 80th, and 90th percentile timestamp cutoffs. At each cutoff, the training-mean baseline and a 30-tree random forest with maximum depth 6 were compared using seeds 42, 7, and 17. Rows before the cutoff formed training data; rows at or after it formed the test set. The input file hash and run settings are in [the sensitivity results](../results/tabular_rating_sensitivity.json).
+
+| Cutoff | Train / test rows | Baseline MAE | Forest MAE mean (range) | MAE reduction | Baseline RMSE | Forest RMSE mean (range) | RMSE reduction |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 70th percentile | 11,208 / 5,008 | 1.3929 | 1.3648 (1.3634–1.3663) | 2.02% | 1.5878 | 1.5667 (1.5649–1.5697) | 1.33% |
+| 80th percentile | 12,849 / 3,367 | 1.3944 | 1.3776 (1.3770–1.3781) | 1.21% | 1.5789 | 1.5582 (1.5569–1.5593) | 1.31% |
+| 90th percentile | 14,432 / 1,784 | 1.3790 | 1.3366 (1.3345–1.3387) | 3.08% | 1.5586 | 1.5228 (1.5206–1.5240) | 2.30% |
+
+The forest had lower MAE and RMSE than the baseline in all nine runs. The seed-to-seed ranges were small in this experiment, while the error levels varied across cutoffs. These cutoffs reuse the same review collection and create overlapping training sets, so they are sensitivity checks rather than independent replications. The three seeds and one product category also limit what can be inferred. The results do not establish statistical significance or predict performance on other categories.
