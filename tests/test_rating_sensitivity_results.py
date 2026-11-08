@@ -17,6 +17,8 @@ def test_recorded_sensitivity_runs_match_the_real_source_and_grid() -> None:
     assert config["num_trees"] == 30
     assert config["max_depth"] == 6
     assert config["relative_error"] == 0.01
+    assert config["bootstrap_resamples"] == 1000
+    assert config["bootstrap_seed"] == 42
     assert config["spark_version"] == "4.2.1"
     assert config["timezone"] == "UTC"
 
@@ -44,3 +46,20 @@ def test_recorded_sensitivity_runs_match_the_real_source_and_grid() -> None:
         assert all(math.isfinite(value) and value >= 0 for value in metrics)
         assert row["model_mae"] < row["baseline_mae"]
         assert row["model_rmse"] < row["baseline_rmse"]
+        assert row["bootstrap_resamples"] == config["bootstrap_resamples"]
+        assert row["bootstrap_seed"] == config["bootstrap_seed"]
+        assert math.isclose(
+            row["mae_delta"], row["model_mae"] - row["baseline_mae"], abs_tol=1e-12
+        )
+        assert math.isclose(
+            row["rmse_delta"], row["model_rmse"] - row["baseline_rmse"], abs_tol=1e-12
+        )
+        intervals = (
+            row["mae_ci_low"],
+            row["mae_ci_high"],
+            row["rmse_ci_low"],
+            row["rmse_ci_high"],
+        )
+        assert all(math.isfinite(value) for value in intervals)
+        assert row["mae_ci_low"] <= row["mae_ci_high"] < 0
+        assert row["rmse_ci_low"] <= row["rmse_ci_high"] < 0
