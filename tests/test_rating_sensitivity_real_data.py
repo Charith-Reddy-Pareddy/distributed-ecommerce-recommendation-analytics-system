@@ -51,6 +51,8 @@ def test_sensitivity_runs_use_the_real_reviews_for_each_cutoff_and_seed() -> Non
             seeds=(23, 42),
             num_trees=3,
             max_depth=3,
+            bootstrap_resamples=40,
+            bootstrap_seed=99,
         )
 
         assert len(results) == 4
@@ -73,5 +75,11 @@ def test_sensitivity_runs_use_the_real_reviews_for_each_cutoff_and_seed() -> Non
             assert row.model_mae >= 0
             assert row.model_rmse >= row.model_mae
             assert row.baseline_rmse >= row.baseline_mae
+            assert row.bootstrap_resamples == 40
+            assert row.bootstrap_seed == 99
+            assert row.mae_delta == pytest.approx(row.model_mae - row.baseline_mae)
+            assert row.rmse_delta == pytest.approx(row.model_rmse - row.baseline_rmse)
+            assert row.mae_ci_low <= row.mae_ci_high
+            assert row.rmse_ci_low <= row.rmse_ci_high
     finally:
         spark.stop()

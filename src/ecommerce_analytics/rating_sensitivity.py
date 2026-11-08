@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any, NamedTuple, Sequence
 
 from ecommerce_analytics.rating_evaluation import evaluate_rating_predictions
+from ecommerce_analytics.rating_bootstrap import bootstrap_rating_errors
 from ecommerce_analytics.rating_matrix import FEATURES, build_rating_matrix
 from ecommerce_analytics.rating_model import fit_rating_model
 from ecommerce_analytics.tabular_rating import build_rating_split
@@ -27,6 +28,14 @@ class RatingSensitivityRun(NamedTuple):
     baseline_rmse: float
     model_mae: float
     model_rmse: float
+    bootstrap_resamples: int
+    bootstrap_seed: int
+    mae_delta: float
+    mae_ci_low: float
+    mae_ci_high: float
+    rmse_delta: float
+    rmse_ci_low: float
+    rmse_ci_high: float
 
 
 def _validate(
@@ -56,11 +65,17 @@ def run_rating_sensitivity(
     num_trees: int = 30,
     max_depth: int = 6,
     relative_error: float = 0.01,
+    bootstrap_resamples: int = 1000,
+    bootstrap_seed: int = 42,
 ) -> list[RatingSensitivityRun]:
     """Run real review rows at each cutoff and seed combination."""
     _validate(cutoffs, seeds, num_trees, max_depth)
     if not math.isfinite(relative_error) or not 0 <= relative_error <= 1:
         raise ValueError("relative_error must be between 0 and 1")
+    if type(bootstrap_resamples) is not int or bootstrap_resamples < 1:
+        raise ValueError("bootstrap_resamples must be a positive integer")
+    if type(bootstrap_seed) is not int:
+        raise ValueError("bootstrap_seed must be an integer")
     missing = {"user_id", "asin", "rating", "timestamp"}.difference(reviews.columns)
     if missing:
         raise ValueError(f"reviews are missing columns: {', '.join(sorted(missing))}")
@@ -81,6 +96,9 @@ def run_rating_sensitivity(
                 matrix, seed=seed, num_trees=num_trees, max_depth=max_depth
             )
             metrics = evaluate_rating_predictions(predictions)
+            intervals = bootstrap_rating_errors(
+                predictions, resamples=bootstrap_resamples, seed=bootstrap_seed
+            )
             runs.append(
                 RatingSensitivityRun(
                     cutoff_quantile=float(quantile),
@@ -94,6 +112,14 @@ def run_rating_sensitivity(
                     baseline_rmse=metrics.baseline_rmse,
                     model_mae=metrics.model_mae,
                     model_rmse=metrics.model_rmse,
+                    bootstrap_resamples=intervals.resamples,
+                    bootstrap_seed=bootstrap_seed,
+                    mae_delta=intervals.mae_delta,
+                    mae_ci_low=intervals.mae_ci_low,
+                    mae_ci_high=intervals.mae_ci_high,
+                    rmse_delta=intervals.rmse_delta,
+                    rmse_ci_low=intervals.rmse_ci_low,
+                    rmse_ci_high=intervals.rmse_ci_high,
                 )
             )
     return runs
@@ -131,6 +157,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--trees", type=int, default=30)
     parser.add_argument("--depth", type=int, default=6)
     parser.add_argument("--relative-error", type=float, default=0.01)
+    parser.add_argument("--bootstrap-resamples", type=int, default=1000)
+    parser.add_argument("--bootstrap-seed", type=int, default=42)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args(argv)
     path = args.input.expanduser().resolve()
@@ -157,6 +185,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             num_trees=args.trees,
             max_depth=args.depth,
             relative_error=args.relative_error,
+            bootstrap_resamples=args.bootstrap_resamples,
+            bootstrap_seed=args.bootstrap_seed,
         )
         result = {
             "source_file": path.name,
@@ -167,6 +197,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "num_trees": args.trees,
                 "max_depth": args.depth,
                 "relative_error": args.relative_error,
+                "bootstrap_resamples": args.bootstrap_resamples,
+                "bootstrap_seed": args.bootstrap_seed,
                 "spark_version": spark.version,
                 "timezone": "UTC",
                 "features": list(FEATURES),
