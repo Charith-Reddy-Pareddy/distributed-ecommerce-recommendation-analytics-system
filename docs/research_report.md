@@ -73,3 +73,21 @@ The sensitivity analysis used 16,216 real Subscription Boxes reviews at the 70th
 | 90th percentile | 14,432 / 1,784 | 1.3790 | 1.3366 (1.3345–1.3387) | 3.08% | 1.5586 | 1.5228 (1.5206–1.5240) | 2.30% |
 
 The forest had lower MAE and RMSE than the baseline in all nine runs. The seed-to-seed ranges were small in this experiment, while the error levels varied across cutoffs. These cutoffs reuse the same review collection and create overlapping training sets, so they are sensitivity checks rather than independent replications. The three seeds and one product category also limit what can be inferred. The results do not establish statistical significance or predict performance on other categories.
+
+### Paired error intervals
+
+For each run, the model-minus-baseline error difference was bootstrapped over paired test reviews using 1,000 resamples and seed 42. Negative values favor the random forest. Each interval is conditional on one cutoff and model seed.
+
+| Cutoff | Model seed | MAE difference (95% interval) | RMSE difference (95% interval) |
+| ---: | ---: | ---: | ---: |
+| 70th percentile | 42 | -0.0266 [-0.0333, -0.0195] | -0.0182 [-0.0254, -0.0109] |
+| 70th percentile | 7 | -0.0284 [-0.0355, -0.0211] | -0.0223 [-0.0296, -0.0149] |
+| 70th percentile | 17 | -0.0295 [-0.0359, -0.0224] | -0.0229 [-0.0297, -0.0158] |
+| 80th percentile | 42 | -0.0163 [-0.0247, -0.0074] | -0.0220 [-0.0306, -0.0131] |
+| 80th percentile | 7 | -0.0167 [-0.0254, -0.0080] | -0.0196 [-0.0287, -0.0103] |
+| 80th percentile | 17 | -0.0174 [-0.0265, -0.0086] | -0.0203 [-0.0295, -0.0105] |
+| 90th percentile | 42 | -0.0423 [-0.0552, -0.0292] | -0.0349 [-0.0482, -0.0206] |
+| 90th percentile | 7 | -0.0446 [-0.0570, -0.0317] | -0.0379 [-0.0505, -0.0245] |
+| 90th percentile | 17 | -0.0403 [-0.0527, -0.0277] | -0.0346 [-0.0466, -0.0216] |
+
+All intervals are below zero, consistent with lower errors for the forest in these runs. The bootstrap resamples review rows, not users or products; repeated observations may be related, so the intervals do not capture that dependence. The cutoffs also share reviews and are not independent replications. Treat this as a sensitivity result for one category, not evidence that the model will perform similarly on other data.
