@@ -1,10 +1,34 @@
-"""Build a descriptive report from the real Amazon Reviews 2023 CSV."""
+"""Build a descriptive report from real Amazon Reviews 2023 data."""
 
 import argparse
 import csv
+import gzip
+import json
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterator
+
+
+def _read_review_rows(path: Path) -> Iterator[tuple[int, dict[str, object]]]:
+    required = {"asin", "rating", "timestamp"}
+    if path.name.endswith(".jsonl.gz"):
+        with gzip.open(path, mode="rt", encoding="utf-8") as stream:
+            for line, text in enumerate(stream, start=1):
+                try:
+                    row = json.loads(text)
+                except json.JSONDecodeError as exc:
+                    raise ValueError(f"invalid review JSON on line {line}") from exc
+                if not isinstance(row, dict) or not required.issubset(row):
+                    raise ValueError("Amazon reviews must include asin, rating, and timestamp")
+                yield line, row
+        return
+
+    with path.open(newline="", encoding="utf-8") as stream:
+        rows = csv.DictReader(stream)
+        if not rows.fieldnames or not required.issubset(rows.fieldnames):
+            raise ValueError("Amazon reviews must include asin, rating, and timestamp")
+        yield from enumerate(rows, start=2)
 
 
 def summarize_reviews(path: str | Path) -> dict[str, object]:
@@ -18,32 +42,27 @@ def summarize_reviews(path: str | Path) -> dict[str, object]:
     first_ts: int | None = None
     last_ts: int | None = None
 
-    with review_path.open(newline="", encoding="utf-8") as stream:
-        rows = csv.DictReader(stream)
-        required = {"asin", "rating", "timestamp"}
-        if not rows.fieldnames or not required.issubset(rows.fieldnames):
-            raise ValueError("Amazon reviews must include asin, rating, and timestamp")
+    for line, row in _read_review_rows(review_path):
+        raw_asin = row["asin"]
+        asin = raw_asin.strip() if isinstance(raw_asin, str) else ""
+        try:
+            rating = float(row["rating"])
+            timestamp = int(row["timestamp"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"invalid rating or timestamp on line {line}") from exc
+        if not asin or not 1 <= rating <= 5 or timestamp <= 0:
+            raise ValueError(f"invalid review fields on line {line}")
 
-        for line, row in enumerate(rows, start=2):
-            asin = row["asin"].strip()
-            try:
-                rating = float(row["rating"])
-                timestamp = int(row["timestamp"])
-            except (TypeError, ValueError) as exc:
-                raise ValueError(f"invalid rating or timestamp on CSV line {line}") from exc
-            if not asin or not 1 <= rating <= 5 or timestamp <= 0:
-                raise ValueError(f"invalid review fields on CSV line {line}")
-
-            ratings[rating] += 1
-            product_counts[asin] += 1
-            product_sums[asin] = product_sums.get(asin, 0.0) + rating
-            rating_sum += rating
-            total += 1
-            first_ts = timestamp if first_ts is None else min(first_ts, timestamp)
-            last_ts = timestamp if last_ts is None else max(last_ts, timestamp)
+        ratings[rating] += 1
+        product_counts[asin] += 1
+        product_sums[asin] = product_sums.get(asin, 0.0) + rating
+        rating_sum += rating
+        total += 1
+        first_ts = timestamp if first_ts is None else min(first_ts, timestamp)
+        last_ts = timestamp if last_ts is None else max(last_ts, timestamp)
 
     if not total or first_ts is None or last_ts is None:
-        raise ValueError("Amazon review CSV contains no review rows")
+        raise ValueError("Amazon review file contains no review rows")
 
     counts = sorted(product_counts.values())
     middle = len(counts) // 2
@@ -89,7 +108,7 @@ def render_report(summary: dict[str, object]) -> str:
         "# Amazon review research report",
         "",
         "Descriptive results computed from the real Amazon Reviews 2023 extract. "
-        "The source CSV is local and is not included in this repository.",
+        "The source data is local and is not included in this repository.",
         "",
         f"- Source file: `{summary['source_file']}`",
         f"- Review rows: {total:,}",
