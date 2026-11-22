@@ -43,7 +43,6 @@ See [the architecture notes](docs/architecture.md) for details.
 | [Amazon Reviews 2023](https://amazon-reviews-2023.github.io/) ([Hugging Face](https://huggingface.co/datasets/McAuley-Lab/Amazon-Reviews-2023)) | Used for the catalog, review analysis, ALS, and rating models |
 | [RetailRocket](https://www.kaggle.com/datasets/retailrocket/ecommerce-dataset) | Not in this checkout; its IDs have no verified link to Amazon IDs |
 
-No data is committed. Place these files locally:
 
 | File | Used by |
 | --- | --- |
