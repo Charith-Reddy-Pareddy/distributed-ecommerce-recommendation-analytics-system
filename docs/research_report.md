@@ -62,6 +62,17 @@ The recommendation comparison is also descriptive, not a significance test. It u
 
 RetailRocket-backed and global application-event analyses remain unavailable: the real RetailRocket files are absent from the inspected checkout and the Cassandra API does not expose global event aggregates. Those questions need their real inputs or an aggregate endpoint before they can be evaluated.
 
+## Tabular rating pilot
+
+A separate pilot used 16,216 real reviews from the Amazon Reviews 2023 Subscription Boxes category. It used one global temporal cutoff at the approximate 80th percentile, 2021-08-17 21:18:37 UTC, with 12,849 training rows, 3,367 test rows, and no excluded rows. Features were each reviewer's and product's earlier review counts and mean ratings, plus review month. Missing history means used the training mean. The baseline always predicted the training mean. The random forest used 30 trees, a maximum depth of 6, and seed 42.
+
+| Model | MAE | RMSE |
+| --- | ---: | ---: |
+| Training mean | 1.394402 | 1.578892 |
+| Random forest | 1.378054 | 1.556884 |
+
+On this test set, the random forest reduced MAE by 1.17% and RMSE by 1.39% relative to the baseline. The matching 80th-percentile, seed-42 run in the sensitivity analysis below has paired intervals that exclude zero for both errors. Those intervals resample reviews, not users or products, so they describe uncertainty within this test split and do not account for related reviews from the same entities. This remains a small, single-category pilot; it does not reproduce the broader review extract used above or show that the result will hold in other Amazon categories. The source file is kept outside Git; it came from the [Amazon Reviews 2023 dataset](https://huggingface.co/datasets/McAuley-Lab/Amazon-Reviews-2023).
+
 ## Tabular rating sensitivity
 
 The sensitivity analysis used 16,216 real Subscription Boxes reviews at the 70th, 80th, and 90th percentile timestamp cutoffs. At each cutoff, the training-mean baseline and a 30-tree random forest with maximum depth 6 were compared using seeds 42, 7, and 17. Rows before the cutoff formed training data; rows at or after it formed the test set. The input file hash and run settings are in [the sensitivity results](../results/tabular_rating_sensitivity.json).
