@@ -73,6 +73,18 @@ A separate pilot used 16,216 real reviews from the Amazon Reviews 2023 Subscript
 
 On this test set, the random forest reduced MAE by 1.17% and RMSE by 1.39% relative to the baseline. The matching 80th-percentile, seed-42 run in the sensitivity analysis below has paired intervals that exclude zero for both errors. Those intervals resample reviews, not users or products, so they describe uncertainty within this test split and do not account for related reviews from the same entities. This remains a small, single-category pilot; it does not reproduce the broader review extract used above or show that the result will hold in other Amazon categories. The source file is kept outside Git; it came from the [Amazon Reviews 2023 dataset](https://huggingface.co/datasets/McAuley-Lab/Amazon-Reviews-2023).
 
+## Reproduce the descriptive summary
+
+Set `AMAZON_REVIEWS_PATH` to a real Amazon review CSV or the `.jsonl.gz` category file, then run:
+
+```sh
+PYTHONPATH=src python -m ecommerce_analytics.research_report \
+  --reviews "$AMAZON_REVIEWS_PATH" \
+  --output /tmp/amazon_review_summary.md
+```
+
+This writes a separate descriptive summary and leaves this report unchanged. It does not retrain the tabular model or refresh the sensitivity results below; those are recorded in [the results file](../results/tabular_rating_sensitivity.json).
+
 ## Tabular rating sensitivity
 
 The sensitivity analysis used 16,216 real Subscription Boxes reviews at the 70th, 80th, and 90th percentile timestamp cutoffs. At each cutoff, the training-mean baseline and a 30-tree random forest with maximum depth 6 were compared using seeds 42, 7, and 17. Rows before the cutoff formed training data; rows at or after it formed the test set. The input file hash and run settings are in [the sensitivity results](../results/tabular_rating_sensitivity.json).
