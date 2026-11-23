@@ -1,4 +1,6 @@
 import csv
+import gzip
+import json
 import os
 from pathlib import Path
 
@@ -8,17 +10,21 @@ import pytest
 def test_research_brief_matches_real_amazon_schema() -> None:
     path = os.environ.get("AMAZON_REVIEWS_PATH")
     if not path or not Path(path).is_file():
-        pytest.skip("set AMAZON_REVIEWS_PATH to the real Amazon review CSV")
+        pytest.skip("set AMAZON_REVIEWS_PATH to a real Amazon review CSV or .jsonl.gz")
 
-    with Path(path).open(newline="", encoding="utf-8") as stream:
-        fields = set(next(csv.reader(stream)))
+    if path.endswith(".jsonl.gz"):
+        with gzip.open(path, mode="rt", encoding="utf-8") as stream:
+            fields = set(json.loads(next(stream)))
+    else:
+        with Path(path).open(newline="", encoding="utf-8") as stream:
+            fields = set(next(csv.reader(stream)))
 
     brief = Path("docs/research_questions.md").read_text(encoding="utf-8")
     assert {"user_id", "asin", "rating", "timestamp"} <= fields
     assert "How are submitted ratings distributed?" in brief
     assert "How do rating volume and average rating vary by product?" in brief
     assert "Do ALS recommendations improve on a popularity baseline" in brief
-    assert "not a result" in brief
+    assert "not a full-data or statistical-significance claim" in brief
 
 
 def test_missing_event_sources_are_marked_unavailable() -> None:
