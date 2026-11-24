@@ -1,6 +1,8 @@
 """Live REST/API check; start the local Compose HBase service to run it."""
 
 import csv
+import gzip
+import json
 import os
 from pathlib import Path
 import uuid
@@ -36,8 +38,12 @@ def _real_user_id() -> str:
             pytest.fail(message)
         pytest.skip(message)
 
-    with path.open(newline="", encoding="utf-8") as stream:
-        user_id = next(csv.DictReader(stream))["user_id"]
+    if path.name.endswith(".jsonl.gz"):
+        with gzip.open(path, mode="rt", encoding="utf-8") as stream:
+            user_id = json.loads(next(stream))["user_id"]
+    else:
+        with path.open(newline="", encoding="utf-8") as stream:
+            user_id = next(csv.DictReader(stream))["user_id"]
     if not user_id:
         pytest.fail(f"Real Amazon review has no user_id: {path}")
     return user_id
