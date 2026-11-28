@@ -1,5 +1,8 @@
 # Distributed E-Commerce Recommendation Analytics System
 
+[![CI](https://github.com/Charith-Reddy-Pareddy/distributed-ecommerce-recommendation-analytics-system/actions/workflows/integration.yml/badge.svg?branch=main)](https://github.com/Charith-Reddy-Pareddy/distributed-ecommerce-recommendation-analytics-system/actions/workflows/integration.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A local research prototype for product search, event ingestion, and recommendations, built on MongoDB, Elasticsearch, Kafka, Cassandra, HBase, and Spark. All results come from real Amazon Reviews 2023 data; missing datasets are reported as missing, never replaced with generated records. This is not a production service.
 
 ## Architecture
